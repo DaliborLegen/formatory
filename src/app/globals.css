@@ -1,26 +1,83 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #F2F1F6;
+  --surface: #FFFFFF;
+  --surface-hover: #F5F5F7;
+  --text: #1D1D1F;
+  --text2: #86868B;
+  --text3: #AEAEB2;
+  --accent: #007AFF;
+  --accent2: #34C759;
+  --red: #FF3B30;
+  --orange: #FF9500;
+  --purple: #AF52DE;
+  --pink: #FF2D55;
+  --teal: #5AC8FA;
+  --indigo: #5856D6;
+  --yellow: #FFCC00;
+  --mint: #00C7BE;
+  --brown: #A2845E;
+  --border: #D2D2D7;
+  --divider: #E5E5EA;
+  --bar: #FBFBFD;
+}
+
+.dark {
+  --bg: #000000;
+  --surface: #1C1C1E;
+  --surface-hover: #2C2C2E;
+  --text: #F5F5F7;
+  --text2: #98989D;
+  --text3: #636366;
+  --accent: #0A84FF;
+  --accent2: #30D158;
+  --red: #FF453A;
+  --orange: #FF9F0A;
+  --purple: #BF5AF2;
+  --pink: #FF375F;
+  --teal: #64D2FF;
+  --indigo: #5E5CE6;
+  --yellow: #FFD60A;
+  --mint: #63E6E2;
+  --brown: #AC8E68;
+  --border: #38383A;
+  --divider: #38383A;
+  --bar: #1C1C1E;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-txt: var(--text);
+  --color-txt2: var(--text2);
+  --color-txt3: var(--text3);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent2);
+  --color-red: var(--red);
+  --color-orange: var(--orange);
+  --color-purple: var(--purple);
+  --color-pink: var(--pink);
+  --color-teal: var(--teal);
+  --color-indigo: var(--indigo);
+  --color-yellow: var(--yellow);
+  --color-mint: var(--mint);
+  --color-brown: var(--brown);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-bar: var(--bar);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
