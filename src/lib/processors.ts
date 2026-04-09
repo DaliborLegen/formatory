@@ -112,6 +112,148 @@ async function loadPdfJs() {
   return _pdfjsLib;
 }
 
+// ===== PDF TOOLS =====
+
+export async function rotatePdf(file: File, degrees: number): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const pages = pdf.getPages();
+  for (const page of pages) {
+    page.setRotation({ type: 0, angle: (page.getRotation().angle + degrees) % 360 } as never);
+  }
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function deletePages(file: File, pageNumbers: number[]): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  // Sort descending so indices don't shift
+  const sorted = [...pageNumbers].sort((a, b) => b - a);
+  for (const num of sorted) {
+    if (num >= 0 && num < pdf.getPageCount()) {
+      pdf.removePage(num);
+    }
+  }
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function extractPages(file: File, pageNumbers: number[]): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const srcPdf = await PDFDocument.load(data);
+  const newPdf = await PDFDocument.create();
+  const pages = await newPdf.copyPages(srcPdf, pageNumbers);
+  pages.forEach((p) => newPdf.addPage(p));
+  const bytes = await newPdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function reorderPages(file: File, newOrder: number[]): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const srcPdf = await PDFDocument.load(data);
+  const newPdf = await PDFDocument.create();
+  const pages = await newPdf.copyPages(srcPdf, newOrder);
+  pages.forEach((p) => newPdf.addPage(p));
+  const bytes = await newPdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function compressPdf(file: File): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function watermarkPdf(file: File, text: string): Promise<Blob> {
+  const { rgb, degrees } = await import("pdf-lib");
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const pages = pdf.getPages();
+  const font = await pdf.embedFont("Helvetica" as never);
+
+  for (const page of pages) {
+    const { width, height } = page.getSize();
+    const fontSize = Math.min(width, height) * 0.08;
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+    page.drawText(text, {
+      x: (width - textWidth) / 2,
+      y: height / 2,
+      size: fontSize,
+      font,
+      color: rgb(0.7, 0.7, 0.7),
+      rotate: degrees(45),
+      opacity: 0.3,
+    });
+  }
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function addPageNumbers(file: File): Promise<Blob> {
+  const { rgb } = await import("pdf-lib");
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const pages = pdf.getPages();
+  const font = await pdf.embedFont("Helvetica" as never);
+
+  pages.forEach((page, i) => {
+    const { width } = page.getSize();
+    const text = String(i + 1);
+    const textWidth = font.widthOfTextAtSize(text, 12);
+    page.drawText(text, {
+      x: (width - textWidth) / 2,
+      y: 20,
+      size: 12,
+      font,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+  });
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function addTextToPdf(
+  file: File,
+  text: string,
+  pageNum: number,
+  x: number,
+  y: number,
+  fontSize: number
+): Promise<Blob> {
+  const { rgb } = await import("pdf-lib");
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const page = pdf.getPage(pageNum);
+  const font = await pdf.embedFont("Helvetica" as never);
+  page.drawText(text, {
+    x,
+    y,
+    size: fontSize,
+    font,
+    color: rgb(0, 0, 0),
+  });
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function protectPdf(file: File, password: string): Promise<Blob> {
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  const bytes = await pdf.save({
+    userPassword: password,
+    ownerPassword: password,
+  } as never);
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function getPdfPageCount(file: File): Promise<number> {
+  const data = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  return pdf.getPageCount();
+}
+
 // ===== SLIKE =====
 
 export async function convertImage(

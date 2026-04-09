@@ -6,6 +6,24 @@ import Link from "next/link";
 type Status = "idle" | "processing" | "done" | "error";
 type ResultFile = { name: string; blob: Blob };
 
+// Parse "1, 3, 5-8" into zero-based page indices
+function parsePageInput(input: string, total: number): number[] {
+  const result: number[] = [];
+  for (const part of input.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.includes("-")) {
+      const [a, b] = trimmed.split("-").map(Number);
+      for (let i = a; i <= b && i <= total; i++) {
+        if (i >= 1) result.push(i - 1);
+      }
+    } else {
+      const n = parseInt(trimmed);
+      if (n >= 1 && n <= total) result.push(n - 1);
+    }
+  }
+  return result;
+}
+
 const FORMAT_OPTIONS: Record<string, string[]> = {
   img_convert: ["jpg", "png", "webp", "bmp"],
   vid_convert: ["mp4", "avi", "mkv", "mov", "webm", "gif", "mp3"],
@@ -29,6 +47,17 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
   const [downloadUrl, setDownloadUrl] = useState("");
   const [videoQuality, setVideoQuality] = useState("720");
+  const [rotateDeg, setRotateDeg] = useState("90");
+  const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [selectedPages, setSelectedPages] = useState("");
+  const [watermarkText, setWatermarkText] = useState("");
+  const [pdfPassword, setPdfPassword] = useState("");
+  const [addTextVal, setAddTextVal] = useState("");
+  const [addTextPage, setAddTextPage] = useState("1");
+  const [addTextX, setAddTextX] = useState("50");
+  const [addTextY, setAddTextY] = useState("700");
+  const [addTextSize, setAddTextSize] = useState("16");
+  const [pageOrder, setPageOrder] = useState("");
 
   const resetAll = () => {
     setFiles([]);
@@ -251,6 +280,17 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
     const selected = Array.from(e.target.files);
     setFiles(tool.multiple ? selected : [selected[0]]);
 
+    // Get PDF page count for PDF tools
+    const pdfTools = ["rotate_pdf", "delete_pages", "extract_pages", "reorder_pages", "add_text"];
+    if (pdfTools.includes(tool.id) && selected[0]) {
+      import("@/lib/processors").then((proc) =>
+        proc.getPdfPageCount(selected[0]).then((count) => {
+          setPdfPageCount(count);
+          setPageOrder(Array.from({ length: count }, (_, i) => i + 1).join(", "));
+        })
+      );
+    }
+
     if (tool.id === "img_resize" && selected[0]) {
       const img = new window.Image();
       img.onload = () => {
@@ -335,6 +375,57 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
         case "vid_audio": {
           const r = await proc.extractAudio(files[0], setProgress);
           res = [r];
+          break;
+        }
+        case "rotate_pdf": {
+          const blob = await proc.rotatePdf(files[0], parseInt(rotateDeg));
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_zavrteno.pdf"), blob }];
+          break;
+        }
+        case "delete_pages": {
+          const pages = parsePageInput(selectedPages, pdfPageCount);
+          const blob = await proc.deletePages(files[0], pages);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_brez_strani.pdf"), blob }];
+          break;
+        }
+        case "extract_pages": {
+          const pages = parsePageInput(selectedPages, pdfPageCount);
+          const blob = await proc.extractPages(files[0], pages);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_izvleceno.pdf"), blob }];
+          break;
+        }
+        case "reorder_pages": {
+          const order = pageOrder.split(",").map((s) => parseInt(s.trim()) - 1).filter((n) => !isNaN(n));
+          const blob = await proc.reorderPages(files[0], order);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_prevrsceno.pdf"), blob }];
+          break;
+        }
+        case "compress_pdf": {
+          const blob = await proc.compressPdf(files[0]);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_stisnjeno.pdf"), blob }];
+          break;
+        }
+        case "watermark_pdf": {
+          const blob = await proc.watermarkPdf(files[0], watermarkText || "DRAFT");
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_zig.pdf"), blob }];
+          break;
+        }
+        case "page_numbers": {
+          const blob = await proc.addPageNumbers(files[0]);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_stevilke.pdf"), blob }];
+          break;
+        }
+        case "add_text": {
+          const blob = await proc.addTextToPdf(
+            files[0], addTextVal, parseInt(addTextPage) - 1,
+            parseInt(addTextX), parseInt(addTextY), parseInt(addTextSize)
+          );
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_besedilo.pdf"), blob }];
+          break;
+        }
+        case "protect_pdf": {
+          const blob = await proc.protectPdf(files[0], pdfPassword);
+          res = [{ name: files[0].name.replace(/\.pdf$/i, "_zasciteno.pdf"), blob }];
           break;
         }
       }
@@ -541,6 +632,130 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
                         onChange={(e) => setCutEnd(e.target.value)}
                         className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt mt-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
                       />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Rotate PDF */}
+              {tool.id === "rotate_pdf" && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-txt mb-3">Kot vrtenja</p>
+                  <div className="flex gap-2">
+                    {["90", "180", "270"].map((deg) => (
+                      <button
+                        key={deg}
+                        onClick={() => setRotateDeg(deg)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          rotateDeg === deg ? "bg-accent text-white" : "bg-bg2 text-txt2 border border-border"
+                        }`}
+                      >
+                        {deg}°
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Page selection for delete/extract */}
+              {(tool.id === "delete_pages" || tool.id === "extract_pages") && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-txt">Strani</p>
+                    {pdfPageCount > 0 && <span className="text-xs text-txt3">Skupaj: {pdfPageCount} strani</span>}
+                  </div>
+                  <input
+                    type="text"
+                    value={selectedPages}
+                    onChange={(e) => setSelectedPages(e.target.value)}
+                    placeholder="npr. 1, 3, 5-8"
+                    className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                  />
+                  <p className="text-xs text-txt3 mt-2">Ločite s vejicami, obsege z vezajem (1-5)</p>
+                </div>
+              )}
+
+              {/* Reorder pages */}
+              {tool.id === "reorder_pages" && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-txt">Vrstni red strani</p>
+                    {pdfPageCount > 0 && <span className="text-xs text-txt3">Skupaj: {pdfPageCount} strani</span>}
+                  </div>
+                  <input
+                    type="text"
+                    value={pageOrder}
+                    onChange={(e) => setPageOrder(e.target.value)}
+                    placeholder="npr. 3, 1, 2, 5, 4"
+                    className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                  />
+                  <p className="text-xs text-txt3 mt-2">Vpišite novo zaporedje številk strani</p>
+                </div>
+              )}
+
+              {/* Watermark */}
+              {tool.id === "watermark_pdf" && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-txt mb-2">Besedilo vodnega žiga</p>
+                  <input
+                    type="text"
+                    value={watermarkText}
+                    onChange={(e) => setWatermarkText(e.target.value)}
+                    placeholder="npr. ZAUPNO, OSNUTEK..."
+                    className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                  />
+                </div>
+              )}
+
+              {/* Protect PDF */}
+              {tool.id === "protect_pdf" && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-txt mb-2">Geslo</p>
+                  <input
+                    type="password"
+                    value={pdfPassword}
+                    onChange={(e) => setPdfPassword(e.target.value)}
+                    placeholder="Vpišite geslo..."
+                    className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                  />
+                </div>
+              )}
+
+              {/* Add text */}
+              {tool.id === "add_text" && (
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-txt mb-2">Besedilo</p>
+                    <input
+                      type="text"
+                      value={addTextVal}
+                      onChange={(e) => setAddTextVal(e.target.value)}
+                      placeholder="Vpišite besedilo..."
+                      className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-txt2 block mb-1">Stran</label>
+                      <input type="number" value={addTextPage} onChange={(e) => setAddTextPage(e.target.value)} min="1" max={pdfPageCount || 999}
+                        className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-txt2 block mb-1">Velikost</label>
+                      <input type="number" value={addTextSize} onChange={(e) => setAddTextSize(e.target.value)}
+                        className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-txt2 block mb-1">X pozicija</label>
+                      <input type="number" value={addTextX} onChange={(e) => setAddTextX(e.target.value)}
+                        className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-txt2 block mb-1">Y pozicija</label>
+                      <input type="number" value={addTextY} onChange={(e) => setAddTextY(e.target.value)}
+                        className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30" />
                     </div>
                   </div>
                 </div>
