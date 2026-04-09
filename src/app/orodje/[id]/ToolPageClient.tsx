@@ -18,11 +18,139 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   const [results, setResults] = useState<ResultFile[]>([]);
   const [error, setError] = useState("");
   const [selectedFormat, setSelectedFormat] = useState(FORMAT_OPTIONS[tool.id]?.[0] || "");
-  const [resizeWidth, setResizeWidth] = useState("800");
+  const [resizeWidth, setResizeWidth] = useState("");
+  const [resizeHeight, setResizeHeight] = useState("");
+  const [keepRatio, setKeepRatio] = useState(true);
+  const [originalSize, setOriginalSize] = useState({ w: 0, h: 0 });
   const [cutStart, setCutStart] = useState("0");
   const [cutEnd, setCutEnd] = useState("10");
   const [videoDuration, setVideoDuration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [downloadUrl, setDownloadUrl] = useState("");
+  const [downloadName, setDownloadName] = useState("");
+
+  // Web download tool - special UI
+  if (tool.id === "web_download") {
+    const doDownload = async () => {
+      if (!downloadUrl.trim()) return;
+      setStatus("processing");
+      setProgress(0);
+      setError("");
+      setResults([]);
+      try {
+        const response = await fetch(downloadUrl.trim());
+        if (!response.ok) throw new Error(`Napaka: ${response.status} ${response.statusText}`);
+        const blob = await response.blob();
+        const urlPath = new URL(downloadUrl.trim()).pathname;
+        const fileName = downloadName.trim() || urlPath.split("/").pop() || "prenos";
+        setResults([{ name: fileName, blob }]);
+        setStatus("done");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Napaka pri prenosu");
+        setStatus("error");
+      }
+    };
+
+    return (
+      <div>
+        <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
+          ← Nazaj
+        </Link>
+        <div className="flex items-center gap-4 mb-8">
+          <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
+            {tool.icon}
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
+            <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
+          </div>
+        </div>
+
+        {status === "idle" && (
+          <div className="space-y-4">
+            <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+              <label className="text-sm font-semibold text-txt mb-2 block">URL naslov</label>
+              <input
+                type="url"
+                value={downloadUrl}
+                onChange={(e) => setDownloadUrl(e.target.value)}
+                placeholder="https://primer.com/datoteka.pdf"
+                className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+            </div>
+            <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+              <label className="text-sm font-semibold text-txt mb-2 block">Ime datoteke (neobvezno)</label>
+              <input
+                type="text"
+                value={downloadName}
+                onChange={(e) => setDownloadName(e.target.value)}
+                placeholder="moja-datoteka.pdf"
+                className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+            </div>
+            <button
+              onClick={doDownload}
+              disabled={!downloadUrl.trim()}
+              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-40 text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+            >
+              Prenesi
+            </button>
+          </div>
+        )}
+
+        {status === "processing" && (
+          <div className="bg-surface rounded-2xl border border-border p-10 text-center shadow-sm">
+            <div className="text-4xl mb-4 animate-spin">⏳</div>
+            <p className="text-sm font-medium text-txt">Prenašam...</p>
+          </div>
+        )}
+
+        {status === "done" && (
+          <div className="bg-surface rounded-2xl border border-border p-8 shadow-sm">
+            <div className="text-center mb-6">
+              <div className="text-4xl mb-2">✅</div>
+              <p className="text-lg font-bold text-txt">Preneseno!</p>
+            </div>
+            <div className="space-y-2 mb-6">
+              {results.map((r, i) => (
+                <div key={i} className="flex items-center justify-between bg-bg2 rounded-xl px-4 py-3">
+                  <span className="text-sm text-txt truncate flex-1 mr-3">{r.name} ({formatSize(r.blob.size)})</span>
+                  <button onClick={() => download(r)} className="text-sm text-accent font-semibold shrink-0 hover:underline">
+                    Prenesi
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => { reset(); setDownloadUrl(""); setDownloadName(""); }}
+              className="w-full bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
+            >
+              Nov prenos
+            </button>
+          </div>
+        )}
+
+        {status === "error" && (
+          <div className="bg-surface rounded-2xl border border-red/30 p-8 text-center shadow-sm">
+            <div className="text-4xl mb-3">❌</div>
+            <p className="text-base font-semibold text-red mb-2">Napaka</p>
+            <p className="text-sm text-txt2 mb-6">{error}</p>
+            <button
+              onClick={() => { reset(); }}
+              className="bg-accent hover:bg-accent-hover text-white font-semibold py-3 px-8 rounded-xl text-sm transition-all duration-200 shadow-sm"
+            >
+              Poskusi znova
+            </button>
+          </div>
+        )}
+
+        <p className="text-center text-xs text-txt3 mt-8">
+          Prenos poteka neposredno v vašem brskalniku.
+        </p>
+      </div>
+    );
+  }
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -38,7 +166,16 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
     const selected = Array.from(e.target.files);
     setFiles(tool.multiple ? selected : [selected[0]]);
 
-    // Get video duration if video tool
+    if (tool.id === "img_resize" && selected[0]) {
+      const img = new window.Image();
+      img.onload = () => {
+        setOriginalSize({ w: img.width, h: img.height });
+        setResizeWidth(String(img.width));
+        setResizeHeight(String(img.height));
+      };
+      img.src = URL.createObjectURL(selected[0]);
+    }
+
     if (tool.id.startsWith("vid_") && selected[0]) {
       const video = document.createElement("video");
       video.src = URL.createObjectURL(selected[0]);
@@ -87,9 +224,10 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
           break;
         }
         case "img_resize": {
-          const w = parseInt(resizeWidth) || 800;
+          const w = parseInt(resizeWidth) || 0;
+          const h = parseInt(resizeHeight) || 0;
           const all = await Promise.all(
-            files.map((f) => proc.resizeImage(f, w))
+            files.map((f) => proc.resizeImage(f, w, h || undefined))
           );
           res = all;
           break;
@@ -153,16 +291,16 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   return (
     <div>
       {/* Back + title */}
-      <Link href="/" className="text-accent text-sm mb-4 inline-block hover:underline">
+      <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
         ← Nazaj
       </Link>
-      <div className="flex items-center gap-3 mb-6">
-        <span className={`w-11 h-11 ${tool.color} rounded-xl flex items-center justify-center text-white text-xl`}>
+      <div className="flex items-center gap-4 mb-8">
+        <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
           {tool.icon}
         </span>
         <div>
-          <h1 className="text-xl font-bold text-txt">{tool.title}</h1>
-          <p className="text-sm text-txt2">{tool.sub}</p>
+          <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
+          <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
         </div>
       </div>
 
@@ -173,10 +311,10 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
             onDrop={onDrop}
             onDragOver={(e) => e.preventDefault()}
             onClick={() => inputRef.current?.click()}
-            className="border-2 border-dashed border-divider rounded-2xl p-10 text-center cursor-pointer hover:border-accent hover:bg-surface transition-colors"
+            className="border-2 border-dashed border-border rounded-2xl p-12 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
           >
-            <p className="text-3xl mb-2">📁</p>
-            <p className="text-sm text-txt2 mb-1">
+            <p className="text-4xl mb-3">📁</p>
+            <p className="text-sm font-medium text-txt mb-1">
               Povlecite datoteke sem ali kliknite za izbiro
             </p>
             <p className="text-xs text-txt3">{tool.sub}</p>
@@ -192,12 +330,12 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
           {/* Selected files */}
           {files.length > 0 && (
-            <div className="mt-4">
-              <div className="bg-surface rounded-xl border border-divider p-4">
-                <p className="text-sm font-medium text-txt mb-2">
+            <div className="mt-6 space-y-4">
+              <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                <p className="text-sm font-semibold text-txt mb-3">
                   {files.length} {files.length === 1 ? "datoteka" : "datotek"} izbran{files.length === 1 ? "a" : "ih"}
                 </p>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
                   {files.map((f, i) => (
                     <p key={i} className="text-xs text-txt2 truncate">
                       {f.name} ({formatSize(f.size)})
@@ -208,17 +346,17 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
               {/* Format picker */}
               {FORMAT_OPTIONS[tool.id] && (
-                <div className="mt-4 bg-surface rounded-xl border border-divider p-4">
-                  <p className="text-sm font-medium text-txt mb-2">Ciljni format</p>
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-txt mb-3">Ciljni format</p>
                   <div className="flex flex-wrap gap-2">
                     {FORMAT_OPTIONS[tool.id].map((fmt) => (
                       <button
                         key={fmt}
                         onClick={() => setSelectedFormat(fmt)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                           selectedFormat === fmt
-                            ? "bg-accent text-white"
-                            : "bg-surface-hover text-txt2 hover:text-txt"
+                            ? "bg-accent text-white shadow-sm"
+                            : "bg-bg2 text-txt2 hover:text-txt border border-border"
                         }`}
                       >
                         .{fmt.toUpperCase()}
@@ -228,28 +366,75 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
                 </div>
               )}
 
-              {/* Resize width */}
+              {/* Resize dimensions */}
               {tool.id === "img_resize" && (
-                <div className="mt-4 bg-surface rounded-xl border border-divider p-4">
-                  <p className="text-sm font-medium text-txt mb-2">Sirina (px)</p>
-                  <input
-                    type="number"
-                    value={resizeWidth}
-                    onChange={(e) => setResizeWidth(e.target.value)}
-                    className="w-full bg-bg border border-divider rounded-lg px-3 py-2 text-sm text-txt"
-                  />
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-semibold text-txt">Velikost (px)</p>
+                    {originalSize.w > 0 && (
+                      <span className="text-xs text-txt3">Originalno: {originalSize.w} × {originalSize.h}</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+                    <div>
+                      <label className="text-xs font-medium text-txt2 mb-1 block">Širina</label>
+                      <input
+                        type="number"
+                        value={resizeWidth}
+                        onChange={(e) => {
+                          const w = e.target.value;
+                          setResizeWidth(w);
+                          if (keepRatio && originalSize.w > 0 && w) {
+                            const ratio = originalSize.h / originalSize.w;
+                            setResizeHeight(String(Math.round(parseInt(w) * ratio)));
+                          }
+                        }}
+                        className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setKeepRatio(!keepRatio)}
+                      className={`mt-5 w-9 h-9 rounded-lg border flex items-center justify-center text-lg transition-all ${
+                        keepRatio
+                          ? "border-accent bg-accent/10 text-accent"
+                          : "border-border text-txt3 hover:border-accent/40"
+                      }`}
+                      title={keepRatio ? "Razmerje zaklenjeno" : "Razmerje odklenjeno"}
+                    >
+                      {keepRatio ? "🔗" : "🔓"}
+                    </button>
+                    <div>
+                      <label className="text-xs font-medium text-txt2 mb-1 block">Višina</label>
+                      <input
+                        type="number"
+                        value={resizeHeight}
+                        onChange={(e) => {
+                          const h = e.target.value;
+                          setResizeHeight(h);
+                          if (keepRatio && originalSize.h > 0 && h) {
+                            const ratio = originalSize.w / originalSize.h;
+                            setResizeWidth(String(Math.round(parseInt(h) * ratio)));
+                          }
+                        }}
+                        className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-txt3 mt-3">
+                    {keepRatio ? "Razmerje stranic je zaklenjeno" : "Prosto spreminjanje dimenzij"}
+                  </p>
                 </div>
               )}
 
               {/* Video cut controls */}
               {tool.id === "vid_cut" && (
-                <div className="mt-4 bg-surface rounded-xl border border-divider p-4">
-                  <p className="text-sm font-medium text-txt mb-3">
+                <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-txt mb-4">
                     Izreži od — do {videoDuration > 0 && `(trajanje: ${videoDuration.toFixed(1)}s)`}
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs text-accent2 font-bold">Od (sekunde)</label>
+                      <label className="text-xs font-semibold text-accent2">Od (sekunde)</label>
                       <input
                         type="number"
                         step="0.1"
@@ -257,11 +442,11 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
                         max={videoDuration || 9999}
                         value={cutStart}
                         onChange={(e) => setCutStart(e.target.value)}
-                        className="w-full bg-bg border border-divider rounded-lg px-3 py-2 text-sm text-txt mt-1"
+                        className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt mt-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-red font-bold">Do (sekunde)</label>
+                      <label className="text-xs font-semibold text-red">Do (sekunde)</label>
                       <input
                         type="number"
                         step="0.1"
@@ -269,7 +454,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
                         max={videoDuration || 9999}
                         value={cutEnd}
                         onChange={(e) => setCutEnd(e.target.value)}
-                        className="w-full bg-bg border border-divider rounded-lg px-3 py-2 text-sm text-txt mt-1"
+                        className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt mt-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
                       />
                     </div>
                   </div>
@@ -279,7 +464,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
               {/* Process button */}
               <button
                 onClick={process}
-                className="mt-4 w-full bg-accent hover:bg-accent/90 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+                className="w-full bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
               >
                 Pretvori
               </button>
@@ -290,37 +475,38 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
       {/* Processing */}
       {status === "processing" && (
-        <div className="bg-surface rounded-2xl border border-divider p-8 text-center">
-          <div className="text-4xl mb-3 animate-spin">⏳</div>
-          <p className="text-sm text-txt2 mb-4">Obdelujem...</p>
-          <div className="w-full bg-divider rounded-full h-1.5 overflow-hidden">
+        <div className="bg-surface rounded-2xl border border-border p-10 text-center shadow-sm">
+          <div className="text-4xl mb-4 animate-spin">⏳</div>
+          <p className="text-sm font-medium text-txt mb-1">Obdelujem...</p>
+          <p className="text-xs text-txt3 mb-6">Prosimo pocakajte</p>
+          <div className="w-full bg-bg2 rounded-full h-2 overflow-hidden">
             <div
-              className="bg-accent h-full rounded-full transition-all duration-300"
+              className="bg-accent h-full rounded-full transition-all duration-500 ease-out"
               style={{ width: `${Math.max(progress * 100, 5)}%` }}
             />
           </div>
           {progress > 0 && (
-            <p className="text-xs text-txt3 mt-2">{Math.round(progress * 100)}%</p>
+            <p className="text-xs text-txt3 mt-3">{Math.round(progress * 100)}%</p>
           )}
         </div>
       )}
 
       {/* Done */}
       {status === "done" && (
-        <div className="bg-surface rounded-2xl border border-divider p-6">
-          <div className="text-center mb-4">
+        <div className="bg-surface rounded-2xl border border-border p-8 shadow-sm">
+          <div className="text-center mb-6">
             <div className="text-4xl mb-2">✅</div>
-            <p className="text-sm font-medium text-txt">Koncano!</p>
-            <p className="text-xs text-txt2">{results.length} {results.length === 1 ? "datoteka" : "datotek"}</p>
+            <p className="text-lg font-bold text-txt">Koncano!</p>
+            <p className="text-sm text-txt2 mt-1">{results.length} {results.length === 1 ? "datoteka" : "datotek"}</p>
           </div>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+          <div className="space-y-2 max-h-48 overflow-y-auto mb-6">
             {results.map((r, i) => (
-              <div key={i} className="flex items-center justify-between bg-bg rounded-lg px-3 py-2">
-                <span className="text-xs text-txt truncate flex-1 mr-2">{r.name}</span>
+              <div key={i} className="flex items-center justify-between bg-bg2 rounded-xl px-4 py-3">
+                <span className="text-sm text-txt truncate flex-1 mr-3">{r.name}</span>
                 <button
                   onClick={() => download(r)}
-                  className="text-xs text-accent font-medium shrink-0 hover:underline"
+                  className="text-sm text-accent font-semibold shrink-0 hover:underline"
                 >
                   Prenesi
                 </button>
@@ -328,11 +514,11 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
             ))}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             {results.length > 1 && (
               <button
                 onClick={downloadAll}
-                className="flex-1 bg-accent text-white font-semibold py-2.5 rounded-xl text-sm"
+                className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3 rounded-xl text-sm transition-all duration-200 shadow-sm"
               >
                 Prenesi vse
               </button>
@@ -340,14 +526,14 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
             {results.length === 1 && (
               <button
                 onClick={() => download(results[0])}
-                className="flex-1 bg-accent text-white font-semibold py-2.5 rounded-xl text-sm"
+                className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3 rounded-xl text-sm transition-all duration-200 shadow-sm"
               >
                 Prenesi
               </button>
             )}
             <button
               onClick={reset}
-              className="flex-1 bg-surface-hover text-txt font-medium py-2.5 rounded-xl text-sm"
+              className="flex-1 bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
             >
               Nova pretvorba
             </button>
@@ -357,13 +543,13 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
       {/* Error */}
       {status === "error" && (
-        <div className="bg-surface rounded-2xl border border-red/30 p-6 text-center">
-          <div className="text-4xl mb-2">❌</div>
-          <p className="text-sm text-red font-medium mb-2">Napaka</p>
-          <p className="text-xs text-txt2 mb-4">{error}</p>
+        <div className="bg-surface rounded-2xl border border-red/30 p-8 text-center shadow-sm">
+          <div className="text-4xl mb-3">❌</div>
+          <p className="text-base font-semibold text-red mb-2">Napaka</p>
+          <p className="text-sm text-txt2 mb-6">{error}</p>
           <button
             onClick={reset}
-            className="bg-accent text-white font-semibold py-2.5 px-6 rounded-xl text-sm"
+            className="bg-accent hover:bg-accent-hover text-white font-semibold py-3 px-8 rounded-xl text-sm transition-all duration-200 shadow-sm"
           >
             Poskusi znova
           </button>
@@ -371,7 +557,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
       )}
 
       {/* Privacy note */}
-      <p className="text-center text-xs text-txt3 mt-6">
+      <p className="text-center text-xs text-txt3 mt-8">
         Vse poteka v vašem brskalniku. Datoteke se ne nalagajo na strežnik.
       </p>
     </div>

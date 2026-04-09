@@ -153,24 +153,42 @@ export async function convertImage(
 
 export async function resizeImage(
   file: File,
-  targetWidth: number
+  targetWidth: number,
+  targetHeight?: number
 ): Promise<{ name: string; blob: Blob }> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const ratio = targetWidth / img.width;
-      const newHeight = Math.round(img.height * ratio);
+      let newWidth: number;
+      let newHeight: number;
+
+      if (targetWidth && targetHeight) {
+        newWidth = targetWidth;
+        newHeight = targetHeight;
+      } else if (targetWidth) {
+        const ratio = targetWidth / img.width;
+        newWidth = targetWidth;
+        newHeight = Math.round(img.height * ratio);
+      } else if (targetHeight) {
+        const ratio = targetHeight / img.height;
+        newWidth = Math.round(img.width * ratio);
+        newHeight = targetHeight;
+      } else {
+        newWidth = img.width;
+        newHeight = img.height;
+      }
+
       const canvas = document.createElement("canvas");
-      canvas.width = targetWidth;
+      canvas.width = newWidth;
       canvas.height = newHeight;
       const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, targetWidth, newHeight);
+      ctx.drawImage(img, 0, 0, newWidth, newHeight);
       const ext = file.name.match(/\.([^.]+)$/)?.[1] || "jpg";
       const mime = ext === "png" ? "image/png" : "image/jpeg";
       canvas.toBlob(
         (blob) => {
           const baseName = file.name.replace(/\.[^.]+$/, "");
-          resolve({ name: `${baseName}_${targetWidth}px.${ext}`, blob: blob! });
+          resolve({ name: `${baseName}_${newWidth}x${newHeight}.${ext}`, blob: blob! });
         },
         mime,
         0.92

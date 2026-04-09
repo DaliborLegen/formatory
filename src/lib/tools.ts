@@ -32,7 +32,13 @@ export const TOOLS: ToolSection[] = [
     section: "Slike",
     items: [
       { id: "img_convert", icon: "🎨", color: "bg-indigo", title: "Pretvori slike", sub: "JPG, PNG, WebP, BMP", accept: "image/*,.heic", multiple: true },
-      { id: "img_resize", icon: "📐", color: "bg-yellow", title: "Pomanjšaj slike", sub: "Spremeni velikost slik", accept: "image/*,.heic", multiple: true },
+      { id: "img_resize", icon: "📐", color: "bg-yellow", title: "Pretvori velikost slike", sub: "Spremeni širino in višino slik", accept: "image/*,.heic", multiple: true },
+    ],
+  },
+  {
+    section: "Prenosi",
+    items: [
+      { id: "web_download", icon: "⬇️", color: "bg-accent", title: "Prenos iz spleta", sub: "Prenesite datoteko z URL naslova" },
     ],
   },
   {

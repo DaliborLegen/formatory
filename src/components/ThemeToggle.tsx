@@ -24,7 +24,7 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="w-9 h-9 rounded-full bg-surface-hover hover:bg-divider flex items-center justify-center transition-colors text-lg"
+      className="w-9 h-9 rounded-full border border-border hover:border-accent/40 bg-surface hover:bg-surface-hover flex items-center justify-center transition-all duration-200 text-sm"
       aria-label="Preklopi temo"
     >
       {dark ? "☀️" : "🌙"}

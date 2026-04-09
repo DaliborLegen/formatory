@@ -1,6 +1,7 @@
 import { TOOLS } from "@/lib/tools";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
+import ParticleBackground from "@/components/ParticleBackground";
 import ToolPageClient from "./ToolPageClient";
 
 export function generateStaticParams() {
@@ -14,8 +15,9 @@ export default async function ToolPage({ params }: { params: Promise<{ id: strin
 
   return (
     <>
+      <ParticleBackground />
       <Header />
-      <main className="flex-1 max-w-lg mx-auto w-full px-4 py-6">
+      <main className="relative z-10 flex-1 max-w-2xl mx-auto w-full px-6 py-10">
         <ToolPageClient tool={tool} />
       </main>
     </>
