@@ -505,17 +505,16 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   return (
     <div>
       {/* Back + title */}
-      <Link href="/" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-txt2 hover:text-accent mb-8 transition-colors">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
-        Nazaj
+      <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
+        ← Nazaj
       </Link>
       <div className="flex items-center gap-4 mb-8">
-        <span className={`w-11 h-11 ${tool.color} rounded-xl flex items-center justify-center text-white text-xl shadow-xs`}>
+        <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
           {tool.icon}
         </span>
         <div>
-          <h1 className="text-xl font-bold text-txt tracking-tight">{tool.title}</h1>
-          <p className="text-[13px] text-txt3 mt-0.5">{tool.sub}</p>
+          <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
+          <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
         </div>
       </div>
 
@@ -526,12 +525,10 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
             onDrop={onDrop}
             onDragOver={(e) => e.preventDefault()}
             onClick={() => inputRef.current?.click()}
-            className="border-2 border-dashed border-border/80 rounded-2xl p-10 sm:p-14 text-center cursor-pointer hover:border-accent/40 hover:bg-accent-soft/30 transition-all duration-200 group"
+            className="border-2 border-dashed border-border rounded-2xl p-12 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
           >
-            <div className="w-12 h-12 rounded-xl bg-bg2 group-hover:bg-accent-soft flex items-center justify-center mx-auto mb-4 transition-colors">
-              <svg className="w-6 h-6 text-txt3 group-hover:text-accent transition-colors" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-            </div>
-            <p className="text-sm font-semibold text-txt mb-1">
+            <p className="text-4xl mb-3">📁</p>
+            <p className="text-sm font-medium text-txt mb-1">
               Povlecite datoteke sem ali kliknite za izbiro
             </p>
             <p className="text-xs text-txt3">{tool.sub}</p>

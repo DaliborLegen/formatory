@@ -4,101 +4,62 @@ import ParticleBackground from "@/components/ParticleBackground";
 import { TOOLS } from "@/lib/tools";
 
 export default function Home() {
-  const totalTools = TOOLS.reduce((acc, s) => acc + s.items.length, 0);
-
   return (
     <>
       <ParticleBackground />
       <Header />
-      <main className="relative z-10 flex-1">
+      <main className="relative z-10 flex-1 max-w-3xl mx-auto w-full px-6 py-12">
         {/* Hero */}
-        <section className="max-w-5xl mx-auto px-6 lg:px-8 pt-20 pb-16 sm:pt-28 sm:pb-20">
-          <div className="max-w-2xl">
-            <div className="badge bg-accent-soft text-accent mb-6 animate-fade-up" style={{ animationDelay: "0s" }}>
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-              </svg>
-              100% zasebno — vse v brskalniku
+        <div className="text-center mb-16">
+          <h1 className="text-4xl sm:text-5xl font-bold text-txt leading-tight tracking-tight mb-4">
+            Pretvori vse na
+            <br />
+            <span className="text-accent">enem mestu</span>
+          </h1>
+          <p className="text-base sm:text-lg text-txt2 max-w-md mx-auto leading-relaxed">
+            Dokumenti, slike, video — brezplacno spletno orodje za pretvorbo datotek. Vse poteka v vašem brskalniku.
+          </p>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-6 mb-16 max-w-lg mx-auto">
+          <div className="text-center">
+            <p className="text-3xl font-bold text-txt">100%</p>
+            <p className="text-xs text-txt2 mt-1">zasebno</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-txt">0</p>
+            <p className="text-xs text-txt2 mt-1">nalaganj na strežnik</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-txt">9+</p>
+            <p className="text-xs text-txt2 mt-1">orodij</p>
+          </div>
+        </div>
+
+        {/* Tool sections */}
+        {TOOLS.map((section) => (
+          <div key={section.section} className="mb-10">
+            <h2 className="text-xs font-semibold text-txt2 uppercase tracking-widest px-1 mb-4">
+              {section.section}
+            </h2>
+            <div className="grid gap-3">
+              {section.items.map((tool) => (
+                <ToolCard key={tool.id} tool={tool} />
+              ))}
             </div>
-
-            <h1
-              className="text-[clamp(2.2rem,5vw,3.5rem)] font-extrabold text-txt leading-[1.1] tracking-tight animate-fade-up"
-              style={{ animationDelay: "0.05s" }}
-            >
-              Pretvori vse na{" "}
-              <span className="text-accent">enem mestu</span>
-            </h1>
-
-            <p
-              className="text-base sm:text-lg text-txt2 mt-5 leading-relaxed max-w-lg animate-fade-up"
-              style={{ animationDelay: "0.1s" }}
-            >
-              Dokumenti, slike, video — brezplacno spletno orodje za pretvorbo
-              datotek. Vaše datoteke nikoli ne zapustijo racunalnika.
-            </p>
           </div>
-
-          {/* Stats */}
-          <div
-            className="flex flex-wrap gap-10 mt-12 animate-fade-up"
-            style={{ animationDelay: "0.15s" }}
-          >
-            {[
-              { value: `${totalTools}`, label: "orodij" },
-              { value: "0", label: "nalaganj na strežnik" },
-              { value: "100%", label: "zasebno" },
-            ].map((stat) => (
-              <div key={stat.label}>
-                <p className="text-3xl sm:text-4xl font-extrabold text-txt font-display tracking-tight">
-                  {stat.value}
-                </p>
-                <p className="text-xs text-txt3 mt-1 font-medium uppercase tracking-wider">
-                  {stat.label}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Divider */}
-        <div className="border-t border-border/60" />
-
-        {/* Tools grid */}
-        <section className="max-w-5xl mx-auto px-6 lg:px-8 py-16 sm:py-20">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-16 gap-y-14">
-            {TOOLS.map((section, sIdx) => (
-              <div
-                key={section.section}
-                className="animate-fade-up"
-                style={{ animationDelay: `${0.05 * sIdx}s` }}
-              >
-                <h2 className="relative pl-4 section-bar text-[13px] font-bold text-txt uppercase tracking-[0.08em] mb-4">
-                  {section.section}
-                </h2>
-                <div className="grid gap-2">
-                  {section.items.map((tool) => (
-                    <ToolCard key={tool.id} tool={tool} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        ))}
 
         {/* Footer */}
-        <footer className="border-t border-border/40 bg-bg2/50">
-          <div className="max-w-5xl mx-auto px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center">
-                <span className="text-white text-[10px] font-bold">F</span>
-              </div>
-              <span className="text-sm font-semibold text-txt">Formatory.si</span>
-            </div>
-            <p className="text-xs text-txt3 text-center sm:text-right">
-              Vse pretvorbe potekajo v vašem brskalniku. Vaše datoteke nikoli ne zapustijo racunalnika.
-            </p>
-          </div>
-        </footer>
+        <div className="text-center mt-16 mb-8 pt-8 border-t border-border/50">
+          <p className="text-sm text-txt3">
+            Formatory.si — vse pretvorbe potekajo v vašem brskalniku.
+          </p>
+          <p className="text-xs text-txt3 mt-1">
+            Vaše datoteke nikoli ne zapustijo vašega racunalnika.
+          </p>
+        </div>
       </main>
     </>
   );

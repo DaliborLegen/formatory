@@ -1,48 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #FAFAFA;
-  --bg2: #F4F4F5;
+  --bg: #FFFFFF;
+  --bg2: #F7F8FA;
   --surface: #FFFFFF;
-  --surface-hover: #FAFAFA;
-  --text: #09090B;
-  --text2: #71717A;
-  --text3: #A1A1AA;
+  --surface-hover: #F5F7FA;
+  --text: #0F172A;
+  --text2: #64748B;
+  --text3: #94A3B8;
   --accent: #2563EB;
   --accent-hover: #1D4ED8;
-  --accent-soft: #EFF6FF;
-  --accent2: #059669;
-  --red: #DC2626;
-  --orange: #EA580C;
-  --purple: #7C3AED;
-  --pink: #DB2777;
-  --teal: #0891B2;
-  --indigo: #4F46E5;
-  --yellow: #CA8A04;
-  --mint: #0D9488;
-  --brown: #92400E;
-  --border: #E4E4E7;
-  --divider: #F4F4F5;
+  --accent2: #10B981;
+  --red: #EF4444;
+  --orange: #F97316;
+  --purple: #8B5CF6;
+  --pink: #EC4899;
+  --teal: #06B6D4;
+  --indigo: #6366F1;
+  --yellow: #EAB308;
+  --mint: #14B8A6;
+  --brown: #A16207;
+  --border: #E2E8F0;
+  --divider: #F1F5F9;
   --bar: #FFFFFF;
-
-  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
-  --shadow-xl: 0 20px 60px rgba(0,0,0,0.1), 0 8px 20px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
 }
 
 .dark {
-  --bg: #09090B;
-  --bg2: #18181B;
-  --surface: #18181B;
-  --surface-hover: #27272A;
-  --text: #FAFAFA;
-  --text2: #A1A1AA;
-  --text3: #52525B;
+  --bg: #0B0F1A;
+  --bg2: #111827;
+  --surface: #1E293B;
+  --surface-hover: #334155;
+  --text: #F1F5F9;
+  --text2: #94A3B8;
+  --text3: #475569;
   --accent: #3B82F6;
   --accent-hover: #60A5FA;
-  --accent-soft: #172554;
   --accent2: #34D399;
   --red: #F87171;
   --orange: #FB923C;
@@ -53,15 +48,12 @@
   --yellow: #FACC15;
   --mint: #2DD4BF;
   --brown: #D97706;
-  --border: #27272A;
-  --divider: #18181B;
-  --bar: #09090B;
-
-  --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
-  --shadow-xl: 0 20px 60px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.3);
+  --border: #1E293B;
+  --divider: #1E293B;
+  --bar: #0F172A;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
 }
 
 @theme inline {
@@ -74,7 +66,6 @@
   --color-txt3: var(--text3);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
-  --color-accent-soft: var(--accent-soft);
   --color-accent2: var(--accent2);
   --color-red: var(--red);
   --color-orange: var(--orange);
@@ -88,13 +79,11 @@
   --color-border: var(--border);
   --color-divider: var(--divider);
   --color-bar: var(--bar);
-  --font-sans: var(--font-jakarta);
-  --font-display: var(--font-display);
-  --shadow-xs: var(--shadow-xs);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
   --shadow-sm: var(--shadow);
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
-  --shadow-xl: var(--shadow-xl);
 }
 
 body {
@@ -108,43 +97,21 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
-/* Staggered entrance animation */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Subtle grid pattern background */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, var(--divider) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--divider) 1px, transparent 1px);
+  background-size: 60px 60px;
 }
 
-.animate-fade-up {
-  animation: fadeUp 0.5s ease-out both;
-}
-
-/* Smooth card hover lift */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-/* Pill badge styling */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-/* Section divider with accent */
-.section-bar::before {
-  content: '';
+/* Decorative gradient blob */
+.blob-accent {
   position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 16px;
-  border-radius: 3px;
-  background: var(--accent);
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+  opacity: 0.04;
+  pointer-events: none;
 }
