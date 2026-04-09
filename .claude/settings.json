@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$PROJECT_DIR\" && git pull --ff-only 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

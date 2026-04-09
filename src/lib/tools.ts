@@ -62,12 +62,6 @@ export const TOOLS: ToolSection[] = [
     ],
   },
   {
-    section: "Prenosi",
-    items: [
-      { id: "vid_download", icon: "⬇️", color: "bg-red", title: "Prenos videa iz spleta", sub: "YouTube, Instagram, TikTok, Facebook" },
-    ],
-  },
-  {
     section: "Video & zvok",
     items: [
       { id: "vid_convert", icon: "🎬", color: "bg-mint", title: "Pretvori video", sub: "MP4, AVI, MKV, MOV, WebM, GIF", accept: "video/*" },

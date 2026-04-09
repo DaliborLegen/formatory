@@ -105,21 +105,38 @@ export async function pdfToImages(file: File): Promise<{ name: string; blob: Blo
 let _pdfjsLib: any = null;
 async function loadPdfJs() {
   if (_pdfjsLib) return _pdfjsLib;
-  const cdnUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
-  _pdfjsLib = await import(/* webpackIgnore: true */ cdnUrl);
-  _pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  if (!w.pdfjsLib) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/pdf.min.js";
+      script.onload = () => {
+        if (w.pdfjsLib) {
+          w.pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+          resolve();
+        } else {
+          reject(new Error("pdf.js se ni naložil"));
+        }
+      };
+      script.onerror = () => reject(new Error("Napaka pri nalaganju PDF.js"));
+      document.head.appendChild(script);
+    });
+  }
+  _pdfjsLib = w.pdfjsLib;
   return _pdfjsLib;
 }
 
 // ===== PDF TOOLS =====
 
 export async function rotatePdf(file: File, degrees: number): Promise<Blob> {
+  const { degrees: pdfDegrees } = await import("pdf-lib");
   const data = await file.arrayBuffer();
   const pdf = await PDFDocument.load(data);
   const pages = pdf.getPages();
   for (const page of pages) {
-    page.setRotation({ type: 0, angle: (page.getRotation().angle + degrees) % 360 } as never);
+    const current = page.getRotation().angle;
+    page.setRotation(pdfDegrees((current + degrees) % 360));
   }
   const bytes = await pdf.save();
   return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
