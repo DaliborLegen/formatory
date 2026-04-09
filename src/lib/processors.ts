@@ -105,8 +105,8 @@ export async function pdfToImages(file: File): Promise<{ name: string; blob: Blo
 let _pdfjsLib: any = null;
 async function loadPdfJs() {
   if (_pdfjsLib) return _pdfjsLib;
-  // @ts-expect-error dynamic import from CDN
-  _pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs");
+  const cdnUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
+  _pdfjsLib = await import(/* webpackIgnore: true */ cdnUrl);
   _pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
   return _pdfjsLib;

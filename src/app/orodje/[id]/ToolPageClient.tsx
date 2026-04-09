@@ -470,6 +470,13 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 
       setResults(res);
       setStatus("done");
+
+      // Track conversion in analytics
+      fetch("/api/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_id: tool.id }),
+      }).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Napaka pri obdelavi");
       setStatus("error");
@@ -517,6 +524,15 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
           <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
         </div>
       </div>
+
+      {/* Basic conversion warning */}
+      {["pdf2word", "pdf2excel", "pdf2pptx", "word2pdf", "excel2pdf", "pptx2pdf"].includes(tool.id) && (
+        <div className="mb-6 bg-bg2 border border-border rounded-xl px-4 py-3">
+          <p className="text-xs text-txt2">
+            ⚡ Osnovna pretvorba — ohranja besedilo, ne pa oblikovanja (tabele, slike, fonti). Za zahtevnejše dokumente priporočamo namizne programe.
+          </p>
+        </div>
+      )}
 
       {/* Drop zone */}
       {status === "idle" && (

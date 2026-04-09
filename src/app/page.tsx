@@ -1,6 +1,7 @@
 import Header from "@/components/Header";
 import ToolCard from "@/components/ToolCard";
 import ParticleBackground from "@/components/ParticleBackground";
+import StatsCounter from "@/components/StatsCounter";
 import { TOOLS } from "@/lib/tools";
 
 export default function Home() {
@@ -22,20 +23,7 @@ export default function Home() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-6 mb-16 max-w-lg mx-auto">
-          <div className="text-center">
-            <p className="text-3xl font-bold text-txt">100%</p>
-            <p className="text-xs text-txt2 mt-1">zasebno</p>
-          </div>
-          <div className="text-center">
-            <p className="text-3xl font-bold text-txt">0</p>
-            <p className="text-xs text-txt2 mt-1">nalaganj na strežnik</p>
-          </div>
-          <div className="text-center">
-            <p className="text-3xl font-bold text-txt">9+</p>
-            <p className="text-xs text-txt2 mt-1">orodij</p>
-          </div>
-        </div>
+        <StatsCounter />
 
         {/* Tool sections */}
         {TOOLS.map((section) => (

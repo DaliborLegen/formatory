@@ -28,6 +28,9 @@ export default function Header() {
           <Link href="/" className="text-sm font-medium text-txt hover:text-accent transition-colors">
             Domov
           </Link>
+          <Link href="/kontakt" className="text-sm font-medium text-txt2 hover:text-accent transition-colors">
+            Kontakt
+          </Link>
           <div ref={menuRef} className="relative">
             <button
               onClick={() => setOpen(!open)}
