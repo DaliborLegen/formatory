@@ -38,7 +38,7 @@ export const TOOLS: ToolSection[] = [
   {
     section: "Prenosi",
     items: [
-      { id: "web_download", icon: "⬇️", color: "bg-accent", title: "Prenos iz spleta", sub: "Prenesite datoteko z URL naslova" },
+      { id: "vid_download", icon: "⬇️", color: "bg-red", title: "Prenos videa iz spleta", sub: "YouTube, Instagram, TikTok, Facebook" },
     ],
   },
   {

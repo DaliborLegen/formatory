@@ -28,10 +28,51 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [downloadUrl, setDownloadUrl] = useState("");
-  const [downloadName, setDownloadName] = useState("");
+  const [videoQuality, setVideoQuality] = useState("720");
 
-  // Web download tool - special UI
-  if (tool.id === "web_download") {
+  const resetAll = () => {
+    setFiles([]);
+    setStatus("idle");
+    setProgress(0);
+    setResults([]);
+    setError("");
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const downloadFile = (r: ResultFile) => {
+    const url = URL.createObjectURL(r.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = r.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fmtSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  };
+
+  // Video download tool - special UI
+  if (tool.id === "vid_download") {
+    const platforms = [
+      { name: "YouTube", icon: "▶️", color: "bg-red" },
+      { name: "Instagram", icon: "📷", color: "bg-pink" },
+      { name: "TikTok", icon: "🎵", color: "bg-txt" },
+      { name: "Facebook", icon: "👤", color: "bg-accent" },
+    ];
+
+    const detectPlatform = (url: string) => {
+      if (/youtube\.com|youtu\.be/i.test(url)) return "YouTube";
+      if (/instagram\.com/i.test(url)) return "Instagram";
+      if (/tiktok\.com/i.test(url)) return "TikTok";
+      if (/facebook\.com|fb\.watch/i.test(url)) return "Facebook";
+      return null;
+    };
+
+    const detectedPlatform = detectPlatform(downloadUrl);
+
     const doDownload = async () => {
       if (!downloadUrl.trim()) return;
       setStatus("processing");
@@ -39,11 +80,22 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
       setError("");
       setResults([]);
       try {
-        const response = await fetch(downloadUrl.trim());
-        if (!response.ok) throw new Error(`Napaka: ${response.status} ${response.statusText}`);
+        const response = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: downloadUrl.trim(), quality: videoQuality }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Napaka: ${response.status}`);
+        }
         const blob = await response.blob();
-        const urlPath = new URL(downloadUrl.trim()).pathname;
-        const fileName = downloadName.trim() || urlPath.split("/").pop() || "prenos";
+        const disposition = response.headers.get("content-disposition");
+        let fileName = "video.mp4";
+        if (disposition) {
+          const match = disposition.match(/filename="?([^";\n]+)"?/);
+          if (match) fileName = match[1];
+        }
         setResults([{ name: fileName, blob }]);
         setStatus("done");
       } catch (err) {
@@ -67,34 +119,66 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
           </div>
         </div>
 
+        {/* Supported platforms */}
+        <div className="flex gap-3 mb-6">
+          {platforms.map((p) => (
+            <div
+              key={p.name}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                detectedPlatform === p.name
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border text-txt2"
+              }`}
+            >
+              <span>{p.icon}</span>
+              {p.name}
+            </div>
+          ))}
+        </div>
+
         {status === "idle" && (
           <div className="space-y-4">
             <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
-              <label className="text-sm font-semibold text-txt mb-2 block">URL naslov</label>
+              <label className="text-sm font-semibold text-txt mb-2 block">Prilepite povezavo do videa</label>
               <input
                 type="url"
                 value={downloadUrl}
                 onChange={(e) => setDownloadUrl(e.target.value)}
-                placeholder="https://primer.com/datoteka.pdf"
-                className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="w-full bg-bg border border-border rounded-lg px-4 py-3 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
               />
+              {detectedPlatform && (
+                <p className="text-xs text-accent2 mt-2 font-medium">
+                  ✓ Zaznana platforma: {detectedPlatform}
+                </p>
+              )}
             </div>
+
             <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
-              <label className="text-sm font-semibold text-txt mb-2 block">Ime datoteke (neobvezno)</label>
-              <input
-                type="text"
-                value={downloadName}
-                onChange={(e) => setDownloadName(e.target.value)}
-                placeholder="moja-datoteka.pdf"
-                className="w-full bg-bg border border-border rounded-lg px-4 py-2.5 text-sm text-txt focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-              />
+              <p className="text-sm font-semibold text-txt mb-3">Kakovost videa</p>
+              <div className="flex flex-wrap gap-2">
+                {["360", "480", "720", "1080"].map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => setVideoQuality(q)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      videoQuality === q
+                        ? "bg-accent text-white shadow-sm"
+                        : "bg-bg2 text-txt2 hover:text-txt border border-border"
+                    }`}
+                  >
+                    {q}p
+                  </button>
+                ))}
+              </div>
             </div>
+
             <button
               onClick={doDownload}
               disabled={!downloadUrl.trim()}
-              className="w-full bg-accent hover:bg-accent-hover disabled:opacity-40 text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+              className="w-full bg-red hover:bg-red/90 disabled:opacity-40 text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md flex items-center justify-center gap-2"
             >
-              Prenesi
+              ⬇️ Prenesi video
             </button>
           </div>
         )}
@@ -102,7 +186,8 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
         {status === "processing" && (
           <div className="bg-surface rounded-2xl border border-border p-10 text-center shadow-sm">
             <div className="text-4xl mb-4 animate-spin">⏳</div>
-            <p className="text-sm font-medium text-txt">Prenašam...</p>
+            <p className="text-sm font-medium text-txt mb-1">Prenašam video...</p>
+            <p className="text-xs text-txt3">To lahko traja nekaj trenutkov</p>
           </div>
         )}
 
@@ -110,23 +195,23 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
           <div className="bg-surface rounded-2xl border border-border p-8 shadow-sm">
             <div className="text-center mb-6">
               <div className="text-4xl mb-2">✅</div>
-              <p className="text-lg font-bold text-txt">Preneseno!</p>
+              <p className="text-lg font-bold text-txt">Video prenesen!</p>
             </div>
             <div className="space-y-2 mb-6">
               {results.map((r, i) => (
                 <div key={i} className="flex items-center justify-between bg-bg2 rounded-xl px-4 py-3">
-                  <span className="text-sm text-txt truncate flex-1 mr-3">{r.name} ({formatSize(r.blob.size)})</span>
-                  <button onClick={() => download(r)} className="text-sm text-accent font-semibold shrink-0 hover:underline">
+                  <span className="text-sm text-txt truncate flex-1 mr-3">{r.name} ({fmtSize(r.blob.size)})</span>
+                  <button onClick={() => downloadFile(r)} className="text-sm text-accent font-semibold shrink-0 hover:underline">
                     Prenesi
                   </button>
                 </div>
               ))}
             </div>
             <button
-              onClick={() => { reset(); setDownloadUrl(""); setDownloadName(""); }}
+              onClick={() => { resetAll(); setDownloadUrl(""); }}
               className="w-full bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
             >
-              Nov prenos
+              Prenesi še en video
             </button>
           </div>
         )}
@@ -137,7 +222,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
             <p className="text-base font-semibold text-red mb-2">Napaka</p>
             <p className="text-sm text-txt2 mb-6">{error}</p>
             <button
-              onClick={() => { reset(); }}
+              onClick={resetAll}
               className="bg-accent hover:bg-accent-hover text-white font-semibold py-3 px-8 rounded-xl text-sm transition-all duration-200 shadow-sm"
             >
               Poskusi znova
@@ -146,7 +231,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
         )}
 
         <p className="text-center text-xs text-txt3 mt-8">
-          Prenos poteka neposredno v vašem brskalniku.
+          Prilepite povezavo iz YouTube, Instagram, TikTok ali Facebook.
         </p>
       </div>
     );
