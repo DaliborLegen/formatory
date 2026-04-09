@@ -3,6 +3,7 @@ import ToolCard from "@/components/ToolCard";
 import ParticleBackground from "@/components/ParticleBackground";
 import StatsCounter from "@/components/StatsCounter";
 import { TOOLS } from "@/lib/tools";
+import Image from "next/image";
 
 export default function Home() {
   return (
@@ -39,13 +40,50 @@ export default function Home() {
           </div>
         ))}
 
+        {/* AI Pro Solution banner */}
+        <div className="mt-16 mb-8">
+          <a
+            href="https://aiprosolutions.si"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-gradient-to-r from-accent/10 via-accent2/10 to-accent/10 border border-accent/20 rounded-2xl p-6 hover:border-accent/40 transition-all duration-300 group"
+          >
+            <div className="flex items-center gap-5">
+              <Image
+                src="/aiprosolution-logo.png"
+                alt="AI Pro Solutions"
+                width={80}
+                height={80}
+                className="rounded-xl shrink-0"
+              />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-accent uppercase tracking-widest mb-1">
+                  Izdelano s strani
+                </p>
+                <p className="text-lg font-bold text-txt group-hover:text-accent transition-colors">
+                  AI Pro Solutions
+                </p>
+                <p className="text-sm text-txt2 mt-1">
+                  Spletne strani, avtomatizacija in AI rešitve za vaše podjetje
+                </p>
+              </div>
+              <span className="text-accent text-2xl group-hover:translate-x-1 transition-transform shrink-0">
+                →
+              </span>
+            </div>
+          </a>
+        </div>
+
         {/* Footer */}
-        <div className="text-center mt-16 mb-8 pt-8 border-t border-border/50">
+        <div className="text-center mb-8 pt-8 border-t border-border/50">
           <p className="text-sm text-txt3">
             Formatory.si — vse pretvorbe potekajo v vašem brskalniku.
           </p>
           <p className="text-xs text-txt3 mt-1">
             Vaše datoteke nikoli ne zapustijo vašega racunalnika.
+          </p>
+          <p className="text-xs text-txt3 mt-3">
+            Razvil <a href="https://aiprosolutions.si" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">AI Pro Solution</a>
           </p>
         </div>
       </main>
