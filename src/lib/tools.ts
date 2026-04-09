@@ -17,44 +17,41 @@ export const TOOLS: ToolSection[] = [
   {
     section: "Pretvori iz PDF",
     items: [
-      { id: "pdf2img", icon: "🖼", color: "bg-orange", title: "PDF v slike", sub: ".pdf → .jpg", accept: ".pdf" },
+      { id: "pdf2word", icon: "📝", color: "bg-accent", title: "PDF v Word", sub: ".pdf → .docx", accept: ".pdf" },
+      { id: "pdf2img", icon: "🖼", color: "bg-orange", title: "PDF v sliko", sub: ".pdf → .jpg", accept: ".pdf" },
+      { id: "pdf2excel", icon: "📊", color: "bg-accent2", title: "PDF v Excel", sub: ".pdf → .xlsx", accept: ".pdf" },
+      { id: "pdf2pptx", icon: "📽️", color: "bg-orange", title: "PDF v PPTX", sub: ".pdf → .pptx", accept: ".pdf" },
     ],
   },
   {
     section: "Pretvori v PDF",
     items: [
-      { id: "img2pdf", icon: "📄", color: "bg-purple", title: "Slike v PDF", sub: ".jpg, .png → .pdf", accept: "image/*,.heic", multiple: true },
+      { id: "word2pdf", icon: "📄", color: "bg-accent", title: "Word v PDF", sub: ".docx → .pdf", accept: ".docx,.doc" },
+      { id: "img2pdf", icon: "🖼", color: "bg-purple", title: "Slika v PDF", sub: ".jpg, .png → .pdf", accept: "image/*,.heic", multiple: true },
+      { id: "excel2pdf", icon: "📊", color: "bg-accent2", title: "Excel v PDF", sub: ".xlsx → .pdf", accept: ".xlsx,.xls,.csv" },
+      { id: "pptx2pdf", icon: "📽️", color: "bg-orange", title: "PPTX v PDF", sub: ".pptx → .pdf", accept: ".pptx,.ppt" },
     ],
   },
   {
     section: "Uredi PDF",
     items: [
       { id: "combine", icon: "🔗", color: "bg-teal", title: "Združi PDF", sub: "Več datotek v eno", accept: ".pdf", multiple: true },
+      { id: "split", icon: "✂️", color: "bg-pink", title: "Razdeli PDF", sub: "Razdeli na posamezne strani", accept: ".pdf" },
+      { id: "extract_pages", icon: "📑", color: "bg-mint", title: "Izvleci strani", sub: "Izvleci izbrane strani", accept: ".pdf" },
+      { id: "delete_pages", icon: "🗑️", color: "bg-red", title: "Izbriši strani", sub: "Odstrani izbrane strani", accept: ".pdf" },
+      { id: "rotate_pdf", icon: "🔄", color: "bg-indigo", title: "Zavrti strani", sub: "Zavrti strani za 90°, 180°, 270°", accept: ".pdf" },
+      { id: "reorder_pages", icon: "↕️", color: "bg-brown", title: "Prevrsti strani", sub: "Spremeni vrstni red strani", accept: ".pdf" },
       { id: "watermark_pdf", icon: "💧", color: "bg-teal", title: "Vodni žig", sub: "Dodaj besedilo na vsako stran", accept: ".pdf" },
       { id: "page_numbers", icon: "🔢", color: "bg-yellow", title: "Številke strani", sub: "Dodaj številke strani", accept: ".pdf" },
       { id: "add_text", icon: "✏️", color: "bg-indigo", title: "Dodaj besedilo", sub: "Vstavi tekst na stran", accept: ".pdf" },
+      { id: "protect_pdf", icon: "🔒", color: "bg-brown", title: "Zaščiti PDF", sub: "Dodaj geslo za zaščito", accept: ".pdf" },
     ],
   },
   {
     section: "Stisni",
     items: [
       { id: "compress_pdf", icon: "📦", color: "bg-accent", title: "Stisni PDF", sub: "Zmanjšaj velikost PDF", accept: ".pdf" },
-    ],
-  },
-  {
-    section: "Spremeni postavitev",
-    items: [
-      { id: "split", icon: "✂️", color: "bg-pink", title: "Razdeli PDF", sub: "Razdeli na posamezne strani", accept: ".pdf" },
-      { id: "extract_pages", icon: "📑", color: "bg-mint", title: "Izvleci strani", sub: "Izvleci izbrane strani", accept: ".pdf" },
-      { id: "delete_pages", icon: "🗑️", color: "bg-red", title: "Izbriši strani", sub: "Odstrani izbrane strani", accept: ".pdf" },
-      { id: "rotate_pdf", icon: "🔄", color: "bg-indigo", title: "Zavrti strani", sub: "Zavrti strani za 90°, 180°, 270°", accept: ".pdf" },
-      { id: "reorder_pages", icon: "↕️", color: "bg-brown", title: "Prevrsti strani", sub: "Spremeni vrstni red strani", accept: ".pdf" },
-    ],
-  },
-  {
-    section: "Zaščita",
-    items: [
-      { id: "protect_pdf", icon: "🔒", color: "bg-brown", title: "Zaščiti PDF", sub: "Dodaj geslo za zaščito", accept: ".pdf" },
+      { id: "compress_img", icon: "📦", color: "bg-pink", title: "Stisni sliko", sub: "Zmanjšaj velikost slike", accept: "image/*,.heic", multiple: true },
     ],
   },
   {

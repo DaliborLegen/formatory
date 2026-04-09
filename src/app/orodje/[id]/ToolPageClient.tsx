@@ -27,6 +27,7 @@ function parsePageInput(input: string, total: number): number[] {
 const FORMAT_OPTIONS: Record<string, string[]> = {
   img_convert: ["jpg", "png", "webp", "bmp"],
   vid_convert: ["mp4", "avi", "mkv", "mov", "webm", "gif", "mp3"],
+  compress_img: ["30", "50", "70", "85"],
 };
 
 export default function ToolPageClient({ tool }: { tool: Tool }) {
@@ -428,6 +429,43 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
           res = [{ name: files[0].name.replace(/\.pdf$/i, "_zasciteno.pdf"), blob }];
           break;
         }
+        case "pdf2word": {
+          const r = await proc.pdfToWord(files[0]);
+          res = [r];
+          break;
+        }
+        case "pdf2excel": {
+          const r = await proc.pdfToExcel(files[0]);
+          res = [r];
+          break;
+        }
+        case "pdf2pptx": {
+          res = await proc.pdfToPptx(files[0]);
+          break;
+        }
+        case "word2pdf": {
+          const blob = await proc.wordToPdf(files[0]);
+          res = [{ name: files[0].name.replace(/\.(docx?|doc)$/i, ".pdf"), blob }];
+          break;
+        }
+        case "excel2pdf": {
+          const blob = await proc.excelToPdf(files[0]);
+          res = [{ name: files[0].name.replace(/\.(xlsx?|xls|csv)$/i, ".pdf"), blob }];
+          break;
+        }
+        case "pptx2pdf": {
+          const blob = await proc.pptxToPdf(files[0]);
+          res = [{ name: files[0].name.replace(/\.(pptx?|ppt)$/i, ".pdf"), blob }];
+          break;
+        }
+        case "compress_img": {
+          const q = parseInt(selectedFormat || "70") / 100;
+          const all = await Promise.all(
+            files.map((f) => proc.compressImage(f, q))
+          );
+          res = all;
+          break;
+        }
       }
 
       setResults(res);
@@ -523,7 +561,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
               {/* Format picker */}
               {FORMAT_OPTIONS[tool.id] && (
                 <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
-                  <p className="text-sm font-semibold text-txt mb-3">Ciljni format</p>
+                  <p className="text-sm font-semibold text-txt mb-3">{tool.id === "compress_img" ? "Kakovost" : "Ciljni format"}</p>
                   <div className="flex flex-wrap gap-2">
                     {FORMAT_OPTIONS[tool.id].map((fmt) => (
                       <button
@@ -535,7 +573,7 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
                             : "bg-bg2 text-txt2 hover:text-txt border border-border"
                         }`}
                       >
-                        .{fmt.toUpperCase()}
+                        {tool.id === "compress_img" ? `${fmt}%` : `.${fmt.toUpperCase()}`}
                       </button>
                     ))}
                   </div>

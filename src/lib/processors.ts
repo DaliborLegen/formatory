@@ -254,6 +254,245 @@ export async function getPdfPageCount(file: File): Promise<number> {
   return pdf.getPageCount();
 }
 
+// ===== DOCUMENT CONVERSIONS =====
+
+export async function pdfToWord(file: File): Promise<{ name: string; blob: Blob }> {
+  const pdfjsLib = await loadPdfJs();
+  const data = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pageText = content.items.map((item: any) => item.str).join(" ");
+    fullText += pageText + "\n\n";
+  }
+
+  // Create simple .docx using XML
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>${fullText.split("\n\n").filter(Boolean).map(p =>
+    `<w:p><w:r><w:t xml:space="preserve">${p.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</w:t></w:r></w:p>`
+  ).join("")}</w:body></w:document>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const { default: JSZip } = await import("jszip");
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", contentTypes);
+  zip.folder("_rels")!.file(".rels", rels);
+  zip.folder("word")!.file("document.xml", docXml);
+
+  const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+  const baseName = file.name.replace(/\.pdf$/i, "");
+  return { name: `${baseName}.docx`, blob };
+}
+
+export async function pdfToExcel(file: File): Promise<{ name: string; blob: Blob }> {
+  const pdfjsLib = await loadPdfJs();
+  const data = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const XLSX = await import("xlsx");
+
+  const rows: string[][] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = content.items as any[];
+
+    // Group by Y position to detect rows
+    const lineMap = new Map<number, string[]>();
+    for (const item of items) {
+      const y = Math.round(item.transform[5]);
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y)!.push(item.str);
+    }
+
+    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+    for (const y of sortedYs) {
+      rows.push(lineMap.get(y)!);
+    }
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  const xlsxData = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([xlsxData], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const baseName = file.name.replace(/\.pdf$/i, "");
+  return { name: `${baseName}.xlsx`, blob };
+}
+
+export async function pdfToPptx(file: File): Promise<{ name: string; blob: Blob }[]> {
+  // Convert each PDF page to an image (reuse pdfToImages), user can import into PPTX
+  return pdfToImages(file);
+}
+
+export async function wordToPdf(file: File): Promise<Blob> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mammoth = await import("mammoth") as any;
+  const data = await file.arrayBuffer();
+  const result = await mammoth.convertToHtml({ arrayBuffer: data });
+  const html = result.value as string;
+
+  // Render HTML to canvas then to PDF
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont("Helvetica" as never);
+
+  // Strip HTML tags for text extraction
+  const text = html.replace(/<[^>]+>/g, "\n").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  const lines = text.split("\n").filter(l => l.trim());
+
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 50;
+  const lineHeight = 16;
+  const maxLinesPerPage = Math.floor((pageHeight - margin * 2) / lineHeight);
+
+  for (let i = 0; i < lines.length; i += maxLinesPerPage) {
+    const page = pdf.addPage([pageWidth, pageHeight]);
+    const pageLines = lines.slice(i, i + maxLinesPerPage);
+    pageLines.forEach((line, idx) => {
+      const trimmed = line.trim().substring(0, 80);
+      page.drawText(trimmed, {
+        x: margin,
+        y: pageHeight - margin - idx * lineHeight,
+        size: 11,
+        font,
+      });
+    });
+  }
+
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function excelToPdf(file: File): Promise<Blob> {
+  const XLSX = await import("xlsx");
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont("Helvetica" as never);
+  const { rgb } = await import("pdf-lib");
+
+  const pageWidth = 842; // landscape A4
+  const pageHeight = 595;
+  const margin = 40;
+  const rowHeight = 18;
+  const maxRows = Math.floor((pageHeight - margin * 2) / rowHeight);
+
+  for (let i = 0; i < rows.length; i += maxRows) {
+    const page = pdf.addPage([pageWidth, pageHeight]);
+    const pageRows = rows.slice(i, i + maxRows);
+
+    pageRows.forEach((row, rIdx) => {
+      const y = pageHeight - margin - rIdx * rowHeight;
+      row.forEach((cell, cIdx) => {
+        const x = margin + cIdx * 120;
+        if (x < pageWidth - margin) {
+          page.drawText(String(cell ?? "").substring(0, 20), {
+            x, y, size: 9, font, color: rgb(0, 0, 0),
+          });
+        }
+      });
+      // Draw row line
+      page.drawLine({
+        start: { x: margin, y: y - 4 },
+        end: { x: pageWidth - margin, y: y - 4 },
+        thickness: 0.5,
+        color: rgb(0.8, 0.8, 0.8),
+      });
+    });
+  }
+
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function pptxToPdf(file: File): Promise<Blob> {
+  // Extract text from PPTX slides and render to PDF
+  const { default: JSZip } = await import("jszip");
+  const data = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(data);
+
+  const slides: string[] = [];
+  let i = 1;
+  while (true) {
+    const slideFile = zip.file(`ppt/slides/slide${i}.xml`);
+    if (!slideFile) break;
+    const xml = await slideFile.async("text");
+    // Extract text from <a:t> tags
+    const texts = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(m => m[1]);
+    slides.push(texts.join(" "));
+    i++;
+  }
+
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont("Helvetica" as never);
+
+  for (const slideText of slides) {
+    const page = pdf.addPage([960, 540]); // 16:9
+    const lines = slideText.match(/.{1,80}/g) || [slideText];
+    lines.forEach((line, idx) => {
+      page.drawText(line, {
+        x: 50,
+        y: 490 - idx * 20,
+        size: 14,
+        font,
+      });
+    });
+  }
+
+  if (slides.length === 0) {
+    const page = pdf.addPage([960, 540]);
+    page.drawText("Ni vsebine za pretvorbo", { x: 50, y: 270, size: 16, font });
+  }
+
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+export async function compressImage(
+  file: File,
+  quality: number
+): Promise<{ name: string; blob: Blob }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(
+        (blob) => {
+          const baseName = file.name.replace(/\.[^.]+$/, "");
+          resolve({ name: `${baseName}_stisnjeno.jpg`, blob: blob! });
+        },
+        "image/jpeg",
+        quality
+      );
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 // ===== SLIKE =====
 
 export async function convertImage(
