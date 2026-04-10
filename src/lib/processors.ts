@@ -1,5 +1,16 @@
 import { PDFDocument } from "pdf-lib";
 
+// Sanitize text for WinAnsi encoding (Helvetica font)
+function sanitize(text: string): string {
+  return text
+    .replace(/č/g, "c").replace(/Č/g, "C")
+    .replace(/š/g, "s").replace(/Š/g, "S")
+    .replace(/ž/g, "z").replace(/Ž/g, "Z")
+    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .replace(/ć/g, "c").replace(/Ć/g, "C")
+    .replace(/[^\x00-\xFF]/g, "");
+}
+
 // ===== PDF =====
 
 export async function splitPdf(file: File): Promise<{ name: string; blob: Blob }[]> {
@@ -193,8 +204,9 @@ export async function watermarkPdf(file: File, text: string): Promise<Blob> {
   for (const page of pages) {
     const { width, height } = page.getSize();
     const fontSize = Math.min(width, height) * 0.08;
-    const textWidth = font.widthOfTextAtSize(text, fontSize);
-    page.drawText(text, {
+    const safeText = sanitize(text);
+    const textWidth = font.widthOfTextAtSize(safeText, fontSize);
+    page.drawText(safeText, {
       x: (width - textWidth) / 2,
       y: height / 2,
       size: fontSize,
@@ -244,7 +256,7 @@ export async function addTextToPdf(
   const pdf = await PDFDocument.load(data);
   const page = pdf.getPage(pageNum);
   const font = await pdf.embedFont("Helvetica" as never);
-  page.drawText(text, {
+  page.drawText(sanitize(text), {
     x,
     y,
     size: fontSize,
@@ -324,23 +336,88 @@ export async function pdfToExcel(file: File): Promise<{ name: string; blob: Blob
   const XLSX = await import("xlsx");
 
   const rows: string[][] = [];
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items = content.items as any[];
 
-    // Group by Y position to detect rows
-    const lineMap = new Map<number, string[]>();
+    // Collect all text items with their X and Y positions
+    const textItems: { x: number; y: number; text: string; width: number }[] = [];
     for (const item of items) {
-      const y = Math.round(item.transform[5]);
-      if (!lineMap.has(y)) lineMap.set(y, []);
-      lineMap.get(y)!.push(item.str);
+      if (!item.str || item.str.trim() === "") continue;
+      textItems.push({
+        x: Math.round(item.transform[4]),
+        y: Math.round(item.transform[5]),
+        text: item.str,
+        width: item.width || 0,
+      });
     }
 
-    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+    if (textItems.length === 0) continue;
+
+    // Group by Y position (with tolerance of 3px for same row)
+    const yTolerance = 3;
+    const rowGroups: Map<number, typeof textItems> = new Map();
+    for (const item of textItems) {
+      let foundY = false;
+      for (const key of rowGroups.keys()) {
+        if (Math.abs(key - item.y) <= yTolerance) {
+          rowGroups.get(key)!.push(item);
+          foundY = true;
+          break;
+        }
+      }
+      if (!foundY) {
+        rowGroups.set(item.y, [item]);
+      }
+    }
+
+    // Collect all unique X positions to determine columns
+    const allX = textItems.map((t) => t.x).sort((a, b) => a - b);
+
+    // Cluster X positions into columns (gap > 15px = new column)
+    const colPositions: number[] = [allX[0]];
+    for (let j = 1; j < allX.length; j++) {
+      const lastCol = colPositions[colPositions.length - 1];
+      if (allX[j] - lastCol > 15) {
+        colPositions.push(allX[j]);
+      }
+    }
+
+    // Find which column an X position belongs to
+    const getCol = (x: number): number => {
+      let best = 0;
+      let bestDist = Math.abs(x - colPositions[0]);
+      for (let j = 1; j < colPositions.length; j++) {
+        const dist = Math.abs(x - colPositions[j]);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = j;
+        }
+      }
+      return best;
+    };
+
+    // Sort rows top to bottom
+    const sortedYs = [...rowGroups.keys()].sort((a, b) => b - a);
+
     for (const y of sortedYs) {
-      rows.push(lineMap.get(y)!);
+      const items = rowGroups.get(y)!;
+      // Sort items left to right
+      items.sort((a, b) => a.x - b.x);
+
+      const row: string[] = new Array(colPositions.length).fill("");
+      for (const item of items) {
+        const col = getCol(item.x);
+        if (row[col]) {
+          row[col] += " " + item.text;
+        } else {
+          row[col] = item.text;
+        }
+      }
+      rows.push(row);
     }
   }
 
@@ -383,7 +460,7 @@ export async function wordToPdf(file: File): Promise<Blob> {
     const page = pdf.addPage([pageWidth, pageHeight]);
     const pageLines = lines.slice(i, i + maxLinesPerPage);
     pageLines.forEach((line, idx) => {
-      const trimmed = line.trim().substring(0, 80);
+      const trimmed = sanitize(line.trim().substring(0, 80));
       page.drawText(trimmed, {
         x: margin,
         y: pageHeight - margin - idx * lineHeight,
@@ -423,7 +500,7 @@ export async function excelToPdf(file: File): Promise<Blob> {
       row.forEach((cell, cIdx) => {
         const x = margin + cIdx * 120;
         if (x < pageWidth - margin) {
-          page.drawText(String(cell ?? "").substring(0, 20), {
+          page.drawText(sanitize(String(cell ?? "").substring(0, 20)), {
             x, y, size: 9, font, color: rgb(0, 0, 0),
           });
         }
@@ -467,7 +544,7 @@ export async function pptxToPdf(file: File): Promise<Blob> {
     const page = pdf.addPage([960, 540]); // 16:9
     const lines = slideText.match(/.{1,80}/g) || [slideText];
     lines.forEach((line, idx) => {
-      page.drawText(line, {
+      page.drawText(sanitize(line), {
         x: 50,
         y: 490 - idx * 20,
         size: 14,
@@ -478,7 +555,7 @@ export async function pptxToPdf(file: File): Promise<Blob> {
 
   if (slides.length === 0) {
     const page = pdf.addPage([960, 540]);
-    page.drawText("Ni vsebine za pretvorbo", { x: 50, y: 270, size: 16, font });
+    page.drawText("Ni vsebine za pretvorbo", { x: 50, y: 270, size: 16, font } as never);
   }
 
   const bytes = await pdf.save();
