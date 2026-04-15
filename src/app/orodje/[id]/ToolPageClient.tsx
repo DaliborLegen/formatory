@@ -923,6 +923,101 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   );
 }
 
+// Fast scan filter for edit preview (simplified version of processors.ts)
+function applyScanFilterToData(d: Uint8ClampedArray, w: number, h: number, filter: "grayscale" | "bw") {
+  const total = w * h;
+  const gray = new Float32Array(total);
+  for (let i = 0; i < total; i++) {
+    gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  }
+
+  // Background estimation — block-based 90th percentile
+  const blockSize = Math.max(32, Math.floor(Math.min(w, h) / 8));
+  const bw = Math.ceil(w / blockSize);
+  const bh = Math.ceil(h / blockSize);
+  const blockMax = new Float32Array(bw * bh);
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      const vals: number[] = [];
+      const yEnd = Math.min((by + 1) * blockSize, h);
+      const xEnd = Math.min((bx + 1) * blockSize, w);
+      for (let y = by * blockSize; y < yEnd; y += 3) {
+        for (let x = bx * blockSize; x < xEnd; x += 3) {
+          vals.push(gray[y * w + x]);
+        }
+      }
+      vals.sort((a, b) => a - b);
+      blockMax[by * bw + bx] = Math.max(vals[Math.floor(vals.length * 0.9)] || 200, 30);
+    }
+  }
+
+  // Bilinear interpolation of background
+  const bg = new Float32Array(total);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const fx = (x / blockSize) - 0.5;
+      const fy = (y / blockSize) - 0.5;
+      const bx0 = Math.max(0, Math.floor(fx));
+      const by0 = Math.max(0, Math.floor(fy));
+      const bx1 = Math.min(bw - 1, bx0 + 1);
+      const by1 = Math.min(bh - 1, by0 + 1);
+      const tx = Math.max(0, fx - bx0);
+      const ty = Math.max(0, fy - by0);
+      bg[y * w + x] = blockMax[by0 * bw + bx0] * (1 - tx) * (1 - ty)
+                     + blockMax[by0 * bw + bx1] * tx * (1 - ty)
+                     + blockMax[by1 * bw + bx0] * (1 - tx) * ty
+                     + blockMax[by1 * bw + bx1] * tx * ty;
+    }
+  }
+
+  if (filter === "grayscale") {
+    for (let i = 0; i < total; i++) {
+      let val = bg[i] > 20 ? (gray[i] / bg[i]) * 240 : gray[i];
+      // S-curve contrast
+      const n = val / 255;
+      val = (1 / (1 + Math.exp(-14 * (n - 0.5)))) * 255;
+      const v = Math.max(0, Math.min(255, Math.round(val)));
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+    }
+  } else {
+    // B&W — adaptive threshold
+    // Normalize
+    const norm = new Float32Array(total);
+    for (let i = 0; i < total; i++) {
+      norm[i] = bg[i] > 20 ? (gray[i] / bg[i]) * 255 : gray[i];
+    }
+    // Integral image for local mean
+    const winSize = Math.max(15, Math.floor(Math.min(w, h) / 40) | 1);
+    const half = Math.floor(winSize / 2);
+    const integral = new Float64Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let rowSum = 0;
+      for (let x = 0; x < w; x++) {
+        rowSum += norm[y * w + x];
+        integral[(y + 1) * (w + 1) + (x + 1)] = integral[y * (w + 1) + (x + 1)] + rowSum;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const x1 = Math.max(0, x - half);
+        const y1 = Math.max(0, y - half);
+        const x2 = Math.min(w - 1, x + half);
+        const y2 = Math.min(h - 1, y + half);
+        const area = (x2 - x1 + 1) * (y2 - y1 + 1);
+        const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                  - integral[y1 * (w + 1) + (x2 + 1)]
+                  - integral[(y2 + 1) * (w + 1) + x1]
+                  + integral[y1 * (w + 1) + x1];
+        const mean = sum / area;
+        const threshold = mean * (1 - 0.2 * (1 - norm[y * w + x] / 255));
+        const val = norm[y * w + x] < threshold - 8 ? 0 : 255;
+        const idx = (y * w + x) * 4;
+        d[idx] = d[idx + 1] = d[idx + 2] = val;
+      }
+    }
+  }
+}
+
 // ===== SCAN UI COMPONENT =====
 
 type ScanFilter = "color" | "grayscale" | "bw";
@@ -1014,17 +1109,8 @@ function ScanUI({ tool }: { tool: Tool }) {
       if (filter !== "color") {
         const imageData = ctx.getImageData(0, 0, w, h);
         const d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (filter === "bw") {
-            const boosted = Math.min(255, gray * 1.3 - 30);
-            const val = boosted > 140 ? 255 : 0;
-            d[i] = d[i + 1] = d[i + 2] = val;
-          } else {
-            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
-            d[i] = d[i + 1] = d[i + 2] = boosted;
-          }
-        }
+        // Quick scan filter for preview
+        applyScanFilterToData(d, w, h, filter);
         ctx.putImageData(imageData, 0, 0);
       }
 
@@ -1164,17 +1250,7 @@ function ScanUI({ tool }: { tool: Tool }) {
       if (editFilter !== "color") {
         const imageData = ctx.getImageData(0, 0, w, h);
         const d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (editFilter === "bw") {
-            const boosted = Math.min(255, gray * 1.3 - 30);
-            const val = boosted > 140 ? 255 : 0;
-            d[i] = d[i + 1] = d[i + 2] = val;
-          } else {
-            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
-            d[i] = d[i + 1] = d[i + 2] = boosted;
-          }
-        }
+        applyScanFilterToData(d, w, h, editFilter);
         ctx.putImageData(imageData, 0, 0);
       }
 
@@ -1356,7 +1432,7 @@ function ScanUI({ tool }: { tool: Tool }) {
 
       {/* ====== CAMERA — fullscreen ====== */}
       {status === "camera" && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
           <div className="flex-1 relative overflow-hidden">
             <video
               ref={videoRef}
@@ -1415,15 +1491,15 @@ function ScanUI({ tool }: { tool: Tool }) {
 
       {/* ====== EDIT PAGE — fullscreen ====== */}
       {status === "edit" && editingIndex >= 0 && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
           {/* Top bar */}
           <div className="bg-black/80 backdrop-blur-sm px-4 py-3 flex items-center justify-between scan-safe-top">
-            <button onClick={retakePhoto} className="text-white text-sm font-medium px-3 py-1.5">
-              Ponovno slikaj
+            <button onClick={retakePhoto} className="text-red-400 text-sm font-semibold px-3 py-1.5 bg-white/10 rounded-lg">
+              Zavrzi
             </button>
             <span className="text-white/60 text-xs">Urejanje</span>
-            <button onClick={saveEdit} className="bg-blue-500 text-white text-sm font-semibold px-4 py-1.5 rounded-full">
-              Shrani
+            <button onClick={saveEdit} className="bg-blue-500 text-white text-sm font-semibold px-4 py-1.5 rounded-lg">
+              Potrdi
             </button>
           </div>
 

@@ -722,33 +722,190 @@ function applyScanFilter(
       const ctx = canvas.getContext("2d")!;
       ctx.drawImage(img, 0, 0);
 
-      if (filter !== "color") {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-          if (filter === "bw") {
-            // High contrast black & white scan effect
-            const boosted = Math.min(255, gray * 1.3 - 30);
-            const val = boosted > 140 ? 255 : 0;
-            d[i] = d[i + 1] = d[i + 2] = val;
-          } else {
-            // Grayscale with slight contrast boost
-            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
-            d[i] = d[i + 1] = d[i + 2] = boosted;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imageData.data;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Step 1: Convert to grayscale array for processing
+      const gray = new Float32Array(w * h);
+      for (let i = 0; i < gray.length; i++) {
+        gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      }
+
+      if (filter === "color") {
+        // Color scan: just white-balance, remove shadows, boost contrast
+        // Estimate background brightness with large-block sampling
+        const blockSize = Math.max(32, Math.floor(Math.min(w, h) / 8));
+        const bgMap = estimateBackground(gray, w, h, blockSize);
+
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            const bg = bgMap[y * w + x];
+            const scale = bg > 20 ? 240 / bg : 1;
+            d[idx]     = clamp(d[idx] * scale);
+            d[idx + 1] = clamp(d[idx + 1] * scale);
+            d[idx + 2] = clamp(d[idx + 2] * scale);
           }
         }
-        ctx.putImageData(imageData, 0, 0);
+
+        // Gentle sharpening
+        sharpenImageData(d, w, h, 0.3);
+      } else if (filter === "grayscale") {
+        // Grayscale scan: remove shadows, good contrast, clean look
+        const blockSize = Math.max(32, Math.floor(Math.min(w, h) / 8));
+        const bgMap = estimateBackground(gray, w, h, blockSize);
+
+        for (let i = 0; i < gray.length; i++) {
+          const bg = bgMap[i];
+          // Normalize: make background white, scale foreground
+          let val = bg > 20 ? (gray[i] / bg) * 240 : gray[i];
+          // Contrast curve — S-curve for crisper text
+          val = sCurve(val, 1.4);
+          const v = clamp(val);
+          d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+        }
+
+        sharpenImageData(d, w, h, 0.4);
+      } else {
+        // B&W scan: adaptive threshold — like a real scanner
+        // Remove shadows with background estimation
+        const blockSize = Math.max(32, Math.floor(Math.min(w, h) / 8));
+        const bgMap = estimateBackground(gray, w, h, blockSize);
+
+        // Normalize against background
+        const normalized = new Float32Array(w * h);
+        for (let i = 0; i < gray.length; i++) {
+          const bg = bgMap[i];
+          normalized[i] = bg > 20 ? (gray[i] / bg) * 255 : gray[i];
+        }
+
+        // Adaptive thresholding with local window
+        const windowSize = Math.max(15, Math.floor(Math.min(w, h) / 40) | 1);
+        const halfWin = Math.floor(windowSize / 2);
+
+        // Build integral image for fast local mean
+        const integral = new Float64Array((w + 1) * (h + 1));
+        for (let y = 0; y < h; y++) {
+          let rowSum = 0;
+          for (let x = 0; x < w; x++) {
+            rowSum += normalized[y * w + x];
+            integral[(y + 1) * (w + 1) + (x + 1)] = integral[y * (w + 1) + (x + 1)] + rowSum;
+          }
+        }
+
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const x1 = Math.max(0, x - halfWin);
+            const y1 = Math.max(0, y - halfWin);
+            const x2 = Math.min(w - 1, x + halfWin);
+            const y2 = Math.min(h - 1, y + halfWin);
+            const area = (x2 - x1 + 1) * (y2 - y1 + 1);
+            const sum = integral[(y2 + 1) * (w + 1) + (x2 + 1)]
+                      - integral[y1 * (w + 1) + (x2 + 1)]
+                      - integral[(y2 + 1) * (w + 1) + x1]
+                      + integral[y1 * (w + 1) + x1];
+            const localMean = sum / area;
+            // Sauvola-inspired threshold: pixel must be notably darker than local mean
+            const threshold = localMean * (1 - 0.2 * (1 - normalized[y * w + x] / 255));
+            const val = normalized[y * w + x] < threshold - 8 ? 0 : 255;
+            const idx = (y * w + x) * 4;
+            d[idx] = d[idx + 1] = d[idx + 2] = val;
+          }
+        }
       }
+
+      ctx.putImageData(imageData, 0, 0);
 
       canvas.toBlob(
         (blob) => resolve(blob!),
         "image/jpeg",
-        0.92
+        0.95
       );
     };
     img.src = URL.createObjectURL(imageBlob);
   });
+}
+
+function clamp(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+}
+
+function sCurve(val: number, strength: number): number {
+  const normalized = val / 255;
+  const curved = 1 / (1 + Math.exp(-strength * 10 * (normalized - 0.5)));
+  return curved * 255;
+}
+
+// Estimate background brightness using block-based max values
+// This helps remove shadows and uneven lighting
+function estimateBackground(
+  gray: Float32Array, w: number, h: number, blockSize: number
+): Float32Array {
+  const bw = Math.ceil(w / blockSize);
+  const bh = Math.ceil(h / blockSize);
+  // Find max (brightest = background) per block
+  const blockMax = new Float32Array(bw * bh);
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      let max = 0;
+      const yStart = by * blockSize;
+      const yEnd = Math.min(yStart + blockSize, h);
+      const xStart = bx * blockSize;
+      const xEnd = Math.min(xStart + blockSize, w);
+      // Use 90th percentile instead of max for robustness
+      const vals: number[] = [];
+      for (let y = yStart; y < yEnd; y += 2) {
+        for (let x = xStart; x < xEnd; x += 2) {
+          vals.push(gray[y * w + x]);
+        }
+      }
+      vals.sort((a, b) => a - b);
+      max = vals[Math.floor(vals.length * 0.9)] || 200;
+      blockMax[by * bw + bx] = Math.max(max, 30); // never below 30
+    }
+  }
+  // Bilinear interpolation to full image
+  const bg = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const fx = (x / blockSize) - 0.5;
+      const fy = (y / blockSize) - 0.5;
+      const bx0 = Math.max(0, Math.floor(fx));
+      const by0 = Math.max(0, Math.floor(fy));
+      const bx1 = Math.min(bw - 1, bx0 + 1);
+      const by1 = Math.min(bh - 1, by0 + 1);
+      const tx = fx - bx0;
+      const ty = fy - by0;
+      const v00 = blockMax[by0 * bw + bx0];
+      const v10 = blockMax[by0 * bw + bx1];
+      const v01 = blockMax[by1 * bw + bx0];
+      const v11 = blockMax[by1 * bw + bx1];
+      bg[y * w + x] = v00 * (1 - tx) * (1 - ty) + v10 * tx * (1 - ty)
+                     + v01 * (1 - tx) * ty + v11 * tx * ty;
+    }
+  }
+  return bg;
+}
+
+// Unsharp mask sharpening
+function sharpenImageData(d: Uint8ClampedArray, w: number, h: number, amount: number) {
+  const copy = new Uint8ClampedArray(d);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const center = copy[idx + c] * 5;
+        const neighbors = copy[((y - 1) * w + x) * 4 + c]
+                        + copy[((y + 1) * w + x) * 4 + c]
+                        + copy[(y * w + x - 1) * 4 + c]
+                        + copy[(y * w + x + 1) * 4 + c];
+        const sharpened = center - neighbors;
+        d[idx + c] = clamp(copy[idx + c] + sharpened * amount);
+      }
+    }
+  }
 }
 
 // ===== VIDEO (ffmpeg.wasm) =====
