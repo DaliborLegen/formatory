@@ -924,6 +924,98 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
   );
 }
 
+// Auto-detect document edges in an image
+// Returns crop rect as percentages { x, y, w, h }
+function detectDocumentEdges(canvas: HTMLCanvasElement): { x: number; y: number; w: number; h: number } {
+  const ctx = canvas.getContext("2d")!;
+  const w = canvas.width;
+  const h = canvas.height;
+  // Downsample for speed
+  const scale = Math.min(1, 300 / Math.max(w, h));
+  const sw = Math.round(w * scale);
+  const sh = Math.round(h * scale);
+  const sCanvas = document.createElement("canvas");
+  sCanvas.width = sw;
+  sCanvas.height = sh;
+  const sCtx = sCanvas.getContext("2d")!;
+  sCtx.drawImage(canvas, 0, 0, sw, sh);
+  const imgData = sCtx.getImageData(0, 0, sw, sh);
+  const d = imgData.data;
+
+  // Convert to grayscale
+  const gray = new Uint8Array(sw * sh);
+  for (let i = 0; i < gray.length; i++) {
+    gray[i] = Math.round(0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]);
+  }
+
+  // Calculate overall brightness stats
+  let sum = 0;
+  for (let i = 0; i < gray.length; i++) sum += gray[i];
+  const mean = sum / gray.length;
+
+  // Document (paper) is typically brighter than background
+  // Threshold: pixels brighter than (mean + offset) are likely paper
+  const threshold = Math.min(mean + 30, 200);
+
+  // Create binary mask: 1 = paper, 0 = background
+  const mask = new Uint8Array(sw * sh);
+  for (let i = 0; i < gray.length; i++) {
+    mask[i] = gray[i] > threshold ? 1 : 0;
+  }
+
+  // Scan from each edge to find where paper starts
+  // Use percentage of bright pixels per row/column
+  const brightThreshold = 0.3; // 30% of row/column must be bright
+
+  // Find top edge
+  let top = 0;
+  for (let y = 0; y < sh; y++) {
+    let count = 0;
+    for (let x = 0; x < sw; x++) count += mask[y * sw + x];
+    if (count / sw > brightThreshold) { top = y; break; }
+  }
+
+  // Find bottom edge
+  let bottom = sh - 1;
+  for (let y = sh - 1; y >= 0; y--) {
+    let count = 0;
+    for (let x = 0; x < sw; x++) count += mask[y * sw + x];
+    if (count / sw > brightThreshold) { bottom = y; break; }
+  }
+
+  // Find left edge
+  let left = 0;
+  for (let x = 0; x < sw; x++) {
+    let count = 0;
+    for (let y = top; y <= bottom; y++) count += mask[y * sw + x];
+    const colHeight = bottom - top + 1;
+    if (count / colHeight > brightThreshold) { left = x; break; }
+  }
+
+  // Find right edge
+  let right = sw - 1;
+  for (let x = sw - 1; x >= 0; x--) {
+    let count = 0;
+    for (let y = top; y <= bottom; y++) count += mask[y * sw + x];
+    const colHeight = bottom - top + 1;
+    if (count / colHeight > brightThreshold) { right = x; break; }
+  }
+
+  // Add small padding (2%)
+  const pad = 2;
+  const xPct = Math.max(0, (left / sw) * 100 - pad);
+  const yPct = Math.max(0, (top / sh) * 100 - pad);
+  const wPct = Math.min(100 - xPct, ((right - left) / sw) * 100 + pad * 2);
+  const hPct = Math.min(100 - yPct, ((bottom - top) / sh) * 100 + pad * 2);
+
+  // Sanity check: if detected area is too small or too large, use defaults
+  if (wPct < 20 || hPct < 20 || wPct > 98 || hPct > 98) {
+    return { x: 5, y: 5, w: 90, h: 90 };
+  }
+
+  return { x: xPct, y: yPct, w: wPct, h: hPct };
+}
+
 // Fast scan filter for edit preview (simplified version of processors.ts)
 function applyScanFilterToData(d: Uint8ClampedArray, w: number, h: number, filter: "grayscale" | "bw") {
   const total = w * h;
@@ -1174,6 +1266,10 @@ function ScanUI({ tool }: { tool: Tool }) {
     canvas.height = Math.round(sh);
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, Math.round(sw), Math.round(sh));
+
+    // Auto-detect document edges
+    const detectedCrop = detectDocumentEdges(canvas);
+
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -1191,8 +1287,8 @@ function ScanUI({ tool }: { tool: Tool }) {
         setEditingIndex(pages.length);
         setEditFilter("bw");
         setEditRotation(0);
-        setIsCropping(false);
-        setCropRect({ x: 10, y: 10, w: 80, h: 80 });
+        setIsCropping(true);
+        setCropRect(detectedCrop);
         setStatus("edit");
       },
       "image/jpeg",
@@ -1213,12 +1309,23 @@ function ScanUI({ tool }: { tool: Tool }) {
     }));
     setPages((prev) => [...prev, ...newPages]);
     if (newPages.length === 1) {
-      setEditingIndex(pages.length);
-      setEditFilter("bw");
-      setEditRotation(0);
-      setIsCropping(false);
-      setCropRect({ x: 10, y: 10, w: 80, h: 80 });
-      setStatus("edit");
+      // Auto-detect edges for single file
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = img.width;
+        c.height = img.height;
+        const cx = c.getContext("2d")!;
+        cx.drawImage(img, 0, 0);
+        const detected = detectDocumentEdges(c);
+        setEditingIndex(pages.length);
+        setEditFilter("bw");
+        setEditRotation(0);
+        setIsCropping(true);
+        setCropRect(detected);
+        setStatus("edit");
+      };
+      img.src = URL.createObjectURL(newFiles[0]);
     } else {
       setStatus("review");
     }
