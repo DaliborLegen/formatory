@@ -1147,31 +1147,11 @@ function ScanUI({ tool }: { tool: Tool }) {
     setTimeout(() => setFlashActive(false), 200);
 
     const video = videoRef.current;
-    // Calculate visible area (object-cover crops the video)
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    const rect = video.getBoundingClientRect();
-    const displayW = rect.width;
-    const displayH = rect.height;
-    const videoRatio = vw / vh;
-    const displayRatio = displayW / displayH;
-
-    let sx = 0, sy = 0, sw = vw, sh = vh;
-    if (videoRatio > displayRatio) {
-      // Video is wider — sides are cropped
-      sw = vh * displayRatio;
-      sx = (vw - sw) / 2;
-    } else {
-      // Video is taller — top/bottom are cropped
-      sh = vw / displayRatio;
-      sy = (vh - sh) / 2;
-    }
-
     const canvas = document.createElement("canvas");
-    canvas.width = sw;
-    canvas.height = sh;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+    ctx.drawImage(video, 0, 0);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -1476,7 +1456,7 @@ function ScanUI({ tool }: { tool: Tool }) {
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-contain"
             />
             {flashActive && (
               <div className="absolute inset-0 bg-white z-10 animate-[flashFade_0.3s_ease-out_forwards]" />
@@ -1629,19 +1609,27 @@ function ScanUI({ tool }: { tool: Tool }) {
               ))}
             </div>
 
-            {/* Keep scanning / Save */}
-            <div className="flex gap-3 px-2 scan-safe-bottom">
+            {/* Actions */}
+            <div className="px-2 scan-safe-bottom space-y-2">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { saveEdit().then(() => startCamera()); }}
+                  className="flex-1 bg-white/15 text-white font-semibold py-3 rounded-xl text-sm border border-white/20"
+                >
+                  Skeniraj naprej
+                </button>
+                <button
+                  onClick={saveEdit}
+                  className="flex-1 bg-blue-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg"
+                >
+                  Shrani stran
+                </button>
+              </div>
               <button
-                onClick={() => { saveEdit().then(() => startCamera()); }}
-                className="flex-1 bg-white/15 text-white font-semibold py-3 rounded-xl text-sm border border-white/20"
+                onClick={retakePhoto}
+                className="w-full bg-red-500/20 text-red-400 font-semibold py-3 rounded-xl text-sm border border-red-500/30"
               >
-                Skeniraj naprej
-              </button>
-              <button
-                onClick={saveEdit}
-                className="flex-1 bg-blue-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg"
-              >
-                Shrani stran
+                Zavrzi in ponovi
               </button>
             </div>
           </div>
