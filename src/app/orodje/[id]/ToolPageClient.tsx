@@ -926,7 +926,6 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 // ===== SCAN UI COMPONENT =====
 
 type ScanFilter = "color" | "grayscale" | "bw";
-type ScanCategory = "document" | "book" | "id_card" | "business_card";
 type ScanStatus = "idle" | "camera" | "edit" | "review" | "processing" | "done" | "error";
 
 interface ScannedPage {
@@ -938,20 +937,12 @@ interface ScannedPage {
   crop: { x: number; y: number; w: number; h: number } | null;
 }
 
-const SCAN_CATEGORIES: { id: ScanCategory; label: string; icon: string; defaultFilter: ScanFilter }[] = [
-  { id: "document", label: "Dokument", icon: "📄", defaultFilter: "bw" },
-  { id: "book", label: "Knjiga", icon: "📖", defaultFilter: "grayscale" },
-  { id: "id_card", label: "Osebna", icon: "🪪", defaultFilter: "color" },
-  { id: "business_card", label: "Vizitka", icon: "💼", defaultFilter: "grayscale" },
-];
-
 function ScanUI({ tool }: { tool: Tool }) {
   const [pages, setPages] = useState<ScannedPage[]>([]);
   const [status, setStatus] = useState<ScanStatus>("idle");
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState("");
   const [flashActive, setFlashActive] = useState(false);
-  const [category, setCategory] = useState<ScanCategory>("document");
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editFilter, setEditFilter] = useState<ScanFilter>("bw");
   const [editRotation, setEditRotation] = useState(0);
@@ -1079,19 +1070,18 @@ function ScanUI({ tool }: { tool: Tool }) {
       (blob) => {
         if (!blob) return;
         stopCamera();
-        const cat = SCAN_CATEGORIES.find((c) => c.id === category)!;
         const preview = URL.createObjectURL(blob);
         const newPage: ScannedPage = {
           original: blob,
           edited: blob,
           preview,
           rotation: 0,
-          filter: cat.defaultFilter,
+          filter: "bw",
           crop: null,
         };
         setPages((prev) => [...prev, newPage]);
         setEditingIndex(pages.length);
-        setEditFilter(cat.defaultFilter);
+        setEditFilter("bw");
         setEditRotation(0);
         setIsCropping(false);
         setCropRect({ x: 10, y: 10, w: 80, h: 80 });
@@ -1105,19 +1095,18 @@ function ScanUI({ tool }: { tool: Tool }) {
   const addFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const newFiles = Array.from(e.target.files);
-    const cat = SCAN_CATEGORIES.find((c) => c.id === category)!;
     const newPages: ScannedPage[] = newFiles.map((f) => ({
       original: f,
       edited: f,
       preview: URL.createObjectURL(f),
       rotation: 0,
-      filter: cat.defaultFilter,
+      filter: "bw",
       crop: null,
     }));
     setPages((prev) => [...prev, ...newPages]);
     if (newPages.length === 1) {
       setEditingIndex(pages.length);
-      setEditFilter(cat.defaultFilter);
+      setEditFilter("bw");
       setEditRotation(0);
       setIsCropping(false);
       setCropRect({ x: 10, y: 10, w: 80, h: 80 });
@@ -1390,23 +1379,6 @@ function ScanUI({ tool }: { tool: Tool }) {
             >
               ✕
             </button>
-          </div>
-
-          {/* Category selector */}
-          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 flex justify-center gap-1 overflow-x-auto">
-            {SCAN_CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-                  category === cat.id
-                    ? "bg-blue-500 text-white"
-                    : "text-white/60"
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
           </div>
 
           {/* Bottom controls */}
