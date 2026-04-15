@@ -1148,11 +1148,32 @@ function ScanUI({ tool }: { tool: Tool }) {
     setTimeout(() => setFlashActive(false), 200);
 
     const video = videoRef.current;
+    // object-cover: video fills container, some parts are cropped
+    // Calculate which part of the video is actually visible
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const rect = video.getBoundingClientRect();
+    const dw = rect.width;
+    const dh = rect.height;
+    const videoRatio = vw / vh;
+    const displayRatio = dw / dh;
+
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (videoRatio > displayRatio) {
+      // Video wider than display — left/right cropped
+      sw = vh * displayRatio;
+      sx = (vw - sw) / 2;
+    } else {
+      // Video taller than display — top/bottom cropped
+      sh = vw / displayRatio;
+      sy = (vh - sh) / 2;
+    }
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = Math.round(sw);
+    canvas.height = Math.round(sh);
     const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, Math.round(sw), Math.round(sh));
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -1457,7 +1478,7 @@ function ScanUI({ tool }: { tool: Tool }) {
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-contain"
+              className="absolute inset-0 w-full h-full object-cover"
             />
             {flashActive && (
               <div className="absolute inset-0 bg-white z-10 animate-[flashFade_0.3s_ease-out_forwards]" />
