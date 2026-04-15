@@ -972,9 +972,24 @@ function ScanUI({ tool }: { tool: Tool }) {
     }
   }, []);
 
+  const startCameraFn = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      streamRef.current = stream;
+      setStatus("camera");
+    } catch {
+      setError("Ni mogoce dostopati do kamere. Preverite dovoljenja brskalnika.");
+      setStatus("error");
+    }
+  }, []);
+
   useEffect(() => {
+    // Auto-start camera when page loads
+    startCameraFn();
     return () => stopCamera();
-  }, [stopCamera]);
+  }, [startCameraFn, stopCamera]);
 
   useEffect(() => {
     if (status === "camera" && videoRef.current && streamRef.current) {
@@ -1029,18 +1044,7 @@ function ScanUI({ tool }: { tool: Tool }) {
     img.src = URL.createObjectURL(blob);
   };
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
-      streamRef.current = stream;
-      setStatus("camera");
-    } catch {
-      setError("Ni mogoce dostopati do kamere. Preverite dovoljenja brskalnika.");
-      setStatus("error");
-    }
-  };
+  const startCamera = startCameraFn;
 
   const playShutterSound = () => {
     try {
@@ -1535,7 +1539,7 @@ function ScanUI({ tool }: { tool: Tool }) {
                   }`}
                 >
                   <span className="text-lg">{f === "bw" ? "◐" : f === "grayscale" ? "🌫" : "🎨"}</span>
-                  {f === "bw" ? "B&W" : f === "grayscale" ? "Sivo" : "Barva"}
+                  {f === "bw" ? "Crno-belo" : f === "grayscale" ? "Sivine" : "Barvno"}
                 </button>
               ))}
             </div>
