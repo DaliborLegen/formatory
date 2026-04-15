@@ -949,15 +949,19 @@ function ScanUI({ tool }: { tool: Tool }) {
     return () => stopCamera();
   }, [stopCamera]);
 
+  // Connect stream to video element when camera status is active
+  useEffect(() => {
+    if (status === "camera" && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [status]);
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setStatus("camera");
     } catch {
       setError("Ni mogoce dostopati do kamere. Preverite dovoljenja brskalnika.");
