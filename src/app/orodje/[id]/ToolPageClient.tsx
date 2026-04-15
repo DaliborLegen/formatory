@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { Tool } from "@/lib/tools";
 import Link from "next/link";
 
@@ -1447,8 +1448,8 @@ function ScanUI({ tool }: { tool: Tool }) {
         </>
       )}
 
-      {/* ====== CAMERA — fullscreen ====== */}
-      {status === "camera" && (
+      {/* ====== CAMERA — fullscreen (portal to body) ====== */}
+      {status === "camera" && createPortal(
         <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black flex flex-col">
           <div className="flex-1 relative overflow-hidden">
             <video
@@ -1503,11 +1504,12 @@ function ScanUI({ tool }: { tool: Tool }) {
             @keyframes flashFade { 0% { opacity: 0.8; } 100% { opacity: 0; } }
             .scan-safe-bottom { padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
           `}</style>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ====== EDIT PAGE — fullscreen ====== */}
-      {status === "edit" && editingIndex >= 0 && (
+      {/* ====== EDIT PAGE — fullscreen (portal to body) ====== */}
+      {status === "edit" && editingIndex >= 0 && createPortal(
         <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black flex flex-col">
           {/* Top bar */}
           <div className="bg-black/80 backdrop-blur-sm px-4 py-3 flex items-center justify-between scan-safe-top">
@@ -1638,7 +1640,8 @@ function ScanUI({ tool }: { tool: Tool }) {
             .scan-safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
             .scan-safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
           `}</style>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ====== REVIEW / pages list ====== */}
