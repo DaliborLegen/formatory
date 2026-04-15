@@ -926,18 +926,44 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
 // ===== SCAN UI COMPONENT =====
 
 type ScanFilter = "color" | "grayscale" | "bw";
+type ScanCategory = "document" | "book" | "id_card" | "business_card";
+type ScanStatus = "idle" | "camera" | "edit" | "review" | "processing" | "done" | "error";
+
+interface ScannedPage {
+  original: Blob;
+  edited: Blob;
+  preview: string;
+  rotation: number;
+  filter: ScanFilter;
+  crop: { x: number; y: number; w: number; h: number } | null;
+}
+
+const SCAN_CATEGORIES: { id: ScanCategory; label: string; icon: string; defaultFilter: ScanFilter }[] = [
+  { id: "document", label: "Dokument", icon: "📄", defaultFilter: "bw" },
+  { id: "book", label: "Knjiga", icon: "📖", defaultFilter: "grayscale" },
+  { id: "id_card", label: "Osebna", icon: "🪪", defaultFilter: "color" },
+  { id: "business_card", label: "Vizitka", icon: "💼", defaultFilter: "grayscale" },
+];
 
 function ScanUI({ tool }: { tool: Tool }) {
-  const [scannedImages, setScannedImages] = useState<Blob[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
-  const [filter, setFilter] = useState<ScanFilter>("bw");
-  const [status, setStatus] = useState<"idle" | "camera" | "processing" | "done" | "error">("idle");
+  const [pages, setPages] = useState<ScannedPage[]>([]);
+  const [status, setStatus] = useState<ScanStatus>("idle");
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState("");
   const [flashActive, setFlashActive] = useState(false);
+  const [category, setCategory] = useState<ScanCategory>("document");
+  const [editingIndex, setEditingIndex] = useState(-1);
+  const [editFilter, setEditFilter] = useState<ScanFilter>("bw");
+  const [editRotation, setEditRotation] = useState(0);
+  const [editPreview, setEditPreview] = useState("");
+  const [isCropping, setIsCropping] = useState(false);
+  const [cropRect, setCropRect] = useState({ x: 10, y: 10, w: 80, h: 80 });
+  const [dragState, setDragState] = useState<{ type: string; startX: number; startY: number; startRect: typeof cropRect } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cropContainerRef = useRef<HTMLDivElement>(null);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -950,12 +976,58 @@ function ScanUI({ tool }: { tool: Tool }) {
     return () => stopCamera();
   }, [stopCamera]);
 
-  // Connect stream to video element when camera status is active
   useEffect(() => {
     if (status === "camera" && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
   }, [status]);
+
+  // Render edit preview when filter/rotation changes
+  useEffect(() => {
+    if (status !== "edit" || editingIndex < 0 || !pages[editingIndex]) return;
+    renderEditPreview(pages[editingIndex].original, editFilter, editRotation);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editFilter, editRotation, status, editingIndex]);
+
+  const renderEditPreview = (blob: Blob, filter: ScanFilter, rotation: number) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = editCanvasRef.current || document.createElement("canvas");
+      const isRotated = rotation === 90 || rotation === 270;
+      const w = isRotated ? img.height : img.width;
+      const h = isRotated ? img.width : img.height;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+
+      if (filter !== "color") {
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (filter === "bw") {
+            const boosted = Math.min(255, gray * 1.3 - 30);
+            const val = boosted > 140 ? 255 : 0;
+            d[i] = d[i + 1] = d[i + 2] = val;
+          } else {
+            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
+            d[i] = d[i + 1] = d[i + 2] = boosted;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      canvas.toBlob((b) => {
+        if (b) setEditPreview(URL.createObjectURL(b));
+      }, "image/jpeg", 0.92);
+    };
+    img.src = URL.createObjectURL(blob);
+  };
 
   const startCamera = async () => {
     try {
@@ -973,7 +1045,6 @@ function ScanUI({ tool }: { tool: Tool }) {
   const playShutterSound = () => {
     try {
       const audioCtx = new AudioContext();
-      // Short click sound
       const duration = 0.15;
       const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
@@ -985,12 +1056,11 @@ function ScanUI({ tool }: { tool: Tool }) {
       source.buffer = buffer;
       source.connect(audioCtx.destination);
       source.start();
-    } catch { /* ignore audio errors */ }
+    } catch { /* ignore */ }
   };
 
   const capturePhoto = () => {
     if (!videoRef.current) return;
-    // Flash effect
     setFlashActive(true);
     playShutterSound();
     setTimeout(() => setFlashActive(false), 200);
@@ -1004,8 +1074,24 @@ function ScanUI({ tool }: { tool: Tool }) {
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
-        setScannedImages((prev) => [...prev, blob]);
-        setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
+        stopCamera();
+        const cat = SCAN_CATEGORIES.find((c) => c.id === category)!;
+        const preview = URL.createObjectURL(blob);
+        const newPage: ScannedPage = {
+          original: blob,
+          edited: blob,
+          preview,
+          rotation: 0,
+          filter: cat.defaultFilter,
+          crop: null,
+        };
+        setPages((prev) => [...prev, newPage]);
+        setEditingIndex(pages.length);
+        setEditFilter(cat.defaultFilter);
+        setEditRotation(0);
+        setIsCropping(false);
+        setCropRect({ x: 10, y: 10, w: 80, h: 80 });
+        setStatus("edit");
       },
       "image/jpeg",
       0.95
@@ -1015,32 +1101,141 @@ function ScanUI({ tool }: { tool: Tool }) {
   const addFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const newFiles = Array.from(e.target.files);
-    for (const f of newFiles) {
-      const url = URL.createObjectURL(f);
-      setPreviews((prev) => [...prev, url]);
-      setScannedImages((prev) => [...prev, f]);
+    const cat = SCAN_CATEGORIES.find((c) => c.id === category)!;
+    const newPages: ScannedPage[] = newFiles.map((f) => ({
+      original: f,
+      edited: f,
+      preview: URL.createObjectURL(f),
+      rotation: 0,
+      filter: cat.defaultFilter,
+      crop: null,
+    }));
+    setPages((prev) => [...prev, ...newPages]);
+    if (newPages.length === 1) {
+      setEditingIndex(pages.length);
+      setEditFilter(cat.defaultFilter);
+      setEditRotation(0);
+      setIsCropping(false);
+      setCropRect({ x: 10, y: 10, w: 80, h: 80 });
+      setStatus("edit");
+    } else {
+      setStatus("review");
     }
     e.target.value = "";
   };
 
-  const removeImage = (index: number) => {
-    URL.revokeObjectURL(previews[index]);
-    setScannedImages((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
+  const applyCrop = async (): Promise<Blob> => {
+    const page = pages[editingIndex];
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const sx = (cropRect.x / 100) * img.width;
+        const sy = (cropRect.y / 100) * img.height;
+        const sw = (cropRect.w / 100) * img.width;
+        const sh = (cropRect.h / 100) * img.height;
+        const canvas = document.createElement("canvas");
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95);
+      };
+      img.src = URL.createObjectURL(page.original);
+    });
   };
 
-  const doneCapturing = () => {
-    stopCamera();
-    setStatus("idle");
+  const saveEdit = async () => {
+    let sourceBlob = pages[editingIndex].original;
+
+    // Apply crop first if active
+    if (isCropping) {
+      sourceBlob = await applyCrop();
+    }
+
+    // Apply filter & rotation via canvas
+    const img = new Image();
+    img.onload = () => {
+      const isRotated = editRotation === 90 || editRotation === 270;
+      const w = isRotated ? img.height : img.width;
+      const h = isRotated ? img.width : img.height;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate((editRotation * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+
+      if (editFilter !== "color") {
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (editFilter === "bw") {
+            const boosted = Math.min(255, gray * 1.3 - 30);
+            const val = boosted > 140 ? 255 : 0;
+            d[i] = d[i + 1] = d[i + 2] = val;
+          } else {
+            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
+            d[i] = d[i + 1] = d[i + 2] = boosted;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const preview = URL.createObjectURL(blob);
+        setPages((prev) => {
+          const updated = [...prev];
+          updated[editingIndex] = {
+            ...updated[editingIndex],
+            edited: blob,
+            preview,
+            rotation: editRotation,
+            filter: editFilter,
+            crop: isCropping ? { ...cropRect } : null,
+          };
+          return updated;
+        });
+        setStatus("review");
+        setIsCropping(false);
+      }, "image/jpeg", 0.92);
+    };
+    img.src = URL.createObjectURL(sourceBlob);
+  };
+
+  const retakePhoto = () => {
+    // Remove current editing page and go back to camera
+    setPages((prev) => prev.filter((_, i) => i !== editingIndex));
+    setEditingIndex(-1);
+    startCamera();
+  };
+
+  const editPage = (index: number) => {
+    setEditingIndex(index);
+    setEditFilter(pages[index].filter);
+    setEditRotation(pages[index].rotation);
+    setIsCropping(false);
+    setCropRect({ x: 10, y: 10, w: 80, h: 80 });
+    setStatus("edit");
+  };
+
+  const removePage = (index: number) => {
+    URL.revokeObjectURL(pages[index].preview);
+    setPages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const generatePdf = async () => {
-    if (scannedImages.length === 0) return;
+    if (pages.length === 0) return;
     setStatus("processing");
     setError("");
     try {
       const proc = await import("@/lib/processors");
-      const blob = await proc.scanToPdf(scannedImages, filter);
+      const editedBlobs = pages.map((p) => p.edited);
+      const blob = await proc.scanToPdf(editedBlobs, "color"); // filters already applied per-page
       setResult(blob);
       setStatus("done");
       fetch("/api/track", {
@@ -1066,12 +1261,12 @@ function ScanUI({ tool }: { tool: Tool }) {
 
   const resetAll = () => {
     stopCamera();
-    previews.forEach((u) => URL.revokeObjectURL(u));
-    setScannedImages([]);
-    setPreviews([]);
+    pages.forEach((p) => URL.revokeObjectURL(p.preview));
+    setPages([]);
     setResult(null);
     setStatus("idle");
     setError("");
+    setEditingIndex(-1);
   };
 
   const fmtSize = (bytes: number) => {
@@ -1080,31 +1275,95 @@ function ScanUI({ tool }: { tool: Tool }) {
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
-  const filterLabels: Record<ScanFilter, string> = {
-    color: "Barvno",
-    grayscale: "Sivine",
-    bw: "Crno-belo",
+  // Crop drag handlers (percentage based)
+  const handleCropPointerDown = (type: string, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const container = cropContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const startX = ((e.clientX - rect.left) / rect.width) * 100;
+    const startY = ((e.clientY - rect.top) / rect.height) * 100;
+    setDragState({ type, startX, startY, startRect: { ...cropRect } });
   };
+
+  useEffect(() => {
+    if (!dragState) return;
+    const container = cropContainerRef.current;
+    if (!container) return;
+
+    const handleMove = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      const cx = ((e.clientX - rect.left) / rect.width) * 100;
+      const cy = ((e.clientY - rect.top) / rect.height) * 100;
+      const dx = cx - dragState.startX;
+      const dy = cy - dragState.startY;
+      const s = dragState.startRect;
+
+      setCropRect(() => {
+        let { x, y, w, h } = s;
+        switch (dragState.type) {
+          case "move":
+            x = Math.max(0, Math.min(100 - w, s.x + dx));
+            y = Math.max(0, Math.min(100 - h, s.y + dy));
+            break;
+          case "tl":
+            x = Math.max(0, Math.min(s.x + s.w - 10, s.x + dx));
+            y = Math.max(0, Math.min(s.y + s.h - 10, s.y + dy));
+            w = s.w - (x - s.x);
+            h = s.h - (y - s.y);
+            break;
+          case "tr":
+            w = Math.max(10, Math.min(100 - s.x, s.w + dx));
+            y = Math.max(0, Math.min(s.y + s.h - 10, s.y + dy));
+            h = s.h - (y - s.y);
+            break;
+          case "bl":
+            x = Math.max(0, Math.min(s.x + s.w - 10, s.x + dx));
+            w = s.w - (x - s.x);
+            h = Math.max(10, Math.min(100 - s.y, s.h + dy));
+            break;
+          case "br":
+            w = Math.max(10, Math.min(100 - s.x, s.w + dx));
+            h = Math.max(10, Math.min(100 - s.y, s.h + dy));
+            break;
+        }
+        return { x, y, w, h };
+      });
+    };
+
+    const handleUp = () => setDragState(null);
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, [dragState]);
 
   return (
     <div>
-      <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
-        ← Nazaj
-      </Link>
-      <div className="flex items-center gap-4 mb-8">
-        <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
-          {tool.icon}
-        </span>
-        <div>
-          <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
-          <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
-        </div>
-      </div>
+      {/* Header — only show when not in fullscreen modes */}
+      {status !== "camera" && status !== "edit" && (
+        <>
+          <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
+            ← Nazaj
+          </Link>
+          <div className="flex items-center gap-4 mb-8">
+            <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
+              {tool.icon}
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
+              <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* Camera view — fullscreen */}
+      {/* ====== CAMERA — fullscreen ====== */}
       {status === "camera" && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
-          {/* Video feed */}
           <div className="flex-1 relative overflow-hidden">
             <video
               ref={videoRef}
@@ -1113,189 +1372,277 @@ function ScanUI({ tool }: { tool: Tool }) {
               muted
               className="absolute inset-0 w-full h-full object-cover"
             />
-            {/* Flash overlay */}
             {flashActive && (
               <div className="absolute inset-0 bg-white z-10 animate-[flashFade_0.3s_ease-out_forwards]" />
             )}
-            {/* Page counter badge */}
-            {scannedImages.length > 0 && (
-              <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-full">
-                {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}
+            {pages.length > 0 && (
+              <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-full z-20">
+                {pages.length} {pages.length === 1 ? "stran" : "strani"}
               </div>
             )}
-            {/* Close button */}
             <button
-              onClick={doneCapturing}
-              className="absolute top-4 right-4 w-10 h-10 bg-black/60 backdrop-blur-sm text-white rounded-full flex items-center justify-center text-xl hover:bg-black/80 transition-all"
+              onClick={() => { stopCamera(); setStatus(pages.length > 0 ? "review" : "idle"); }}
+              className="absolute top-4 right-4 w-10 h-10 bg-black/60 backdrop-blur-sm text-white rounded-full flex items-center justify-center text-xl z-20"
             >
               ✕
             </button>
           </div>
+
+          {/* Category selector */}
+          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 flex justify-center gap-1 overflow-x-auto">
+            {SCAN_CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+                  category === cat.id
+                    ? "bg-blue-500 text-white"
+                    : "text-white/60"
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
           {/* Bottom controls */}
-          <div className="bg-black/80 backdrop-blur-sm px-6 py-6 flex items-center justify-center gap-6 safe-area-bottom">
-            {/* Done button */}
+          <div className="bg-black/80 backdrop-blur-sm px-6 py-5 flex items-center justify-center gap-8 scan-safe-bottom">
             <button
-              onClick={doneCapturing}
-              className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm text-white flex items-center justify-center text-sm font-semibold border border-white/30"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-12 h-12 rounded-full bg-white/15 text-white flex items-center justify-center text-lg border border-white/20"
             >
-              OK
+              🖼
             </button>
-            {/* Shutter button */}
             <button
               onClick={capturePhoto}
-              className="w-20 h-20 rounded-full bg-white border-4 border-white/40 flex items-center justify-center shadow-lg active:scale-90 transition-transform duration-100"
+              className="w-[72px] h-[72px] rounded-full bg-white border-[5px] border-white/30 flex items-center justify-center shadow-xl active:scale-90 transition-transform duration-100"
             >
-              <div className="w-16 h-16 rounded-full bg-white border-2 border-gray-300" />
+              <div className="w-[58px] h-[58px] rounded-full bg-white border-2 border-gray-200" />
             </button>
-            {/* Thumbnail of last scan */}
-            <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/40 bg-black/40">
-              {previews.length > 0 ? (
-                <img
-                  src={previews[previews.length - 1]}
-                  alt="Zadnja"
-                  className="w-full h-full object-cover"
-                />
+            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/30 bg-black/40">
+              {pages.length > 0 ? (
+                <img src={pages[pages.length - 1].preview} alt="" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs">0</div>
+                <div className="w-full h-full" />
               )}
             </div>
           </div>
+
+          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={addFromFile} className="hidden" />
+
           <style jsx>{`
-            @keyframes flashFade {
-              0% { opacity: 0.8; }
-              100% { opacity: 0; }
-            }
-            .safe-area-bottom {
-              padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
-            }
+            @keyframes flashFade { 0% { opacity: 0.8; } 100% { opacity: 0; } }
+            .scan-safe-bottom { padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
           `}</style>
         </div>
       )}
 
-      {/* Idle / setup */}
-      {(status === "idle") && (
-        <div className="space-y-4">
-          {/* Capture buttons */}
-          {scannedImages.length === 0 ? (
-            <div className="space-y-3">
-              <button
-                onClick={startCamera}
-                className="w-full border-2 border-dashed border-border rounded-2xl p-10 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
-              >
-                <p className="text-4xl mb-3">📷</p>
-                <p className="text-sm font-medium text-txt mb-1">Odpri kamero in slikaj dokument</p>
-                <p className="text-xs text-txt3">Na telefonu se odpre zadnja kamera</p>
-              </button>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-txt3 font-medium">ali</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full border-2 border-dashed border-border rounded-2xl p-8 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
-              >
-                <p className="text-3xl mb-2">📁</p>
-                <p className="text-sm font-medium text-txt mb-1">Nalozi slike iz naprave</p>
-                <p className="text-xs text-txt3">JPG, PNG — lahko vec slik hkrati</p>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                capture="environment"
-                onChange={addFromFile}
-                className="hidden"
-              />
-            </div>
-          ) : (
-            <>
-              {/* Thumbnails of scanned pages */}
-              <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-txt">
-                    {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={startCamera}
-                      className="text-xs text-accent font-medium hover:underline"
-                    >
-                      + Slikaj se
-                    </button>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-xs text-accent font-medium hover:underline"
-                    >
-                      + Nalozi
-                    </button>
+      {/* ====== EDIT PAGE — fullscreen ====== */}
+      {status === "edit" && editingIndex >= 0 && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          {/* Top bar */}
+          <div className="bg-black/80 backdrop-blur-sm px-4 py-3 flex items-center justify-between scan-safe-top">
+            <button onClick={retakePhoto} className="text-white text-sm font-medium px-3 py-1.5">
+              Ponovno slikaj
+            </button>
+            <span className="text-white/60 text-xs">Urejanje</span>
+            <button onClick={saveEdit} className="bg-blue-500 text-white text-sm font-semibold px-4 py-1.5 rounded-full">
+              Shrani
+            </button>
+          </div>
+
+          {/* Image preview */}
+          <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4" ref={cropContainerRef}>
+            <img
+              src={editPreview || pages[editingIndex]?.preview}
+              alt="Urejanje"
+              className="max-w-full max-h-full object-contain rounded-lg"
+              style={isCropping ? { opacity: 0.4 } : {}}
+            />
+            {/* Crop overlay */}
+            {isCropping && (
+              <>
+                <div
+                  className="absolute border-2 border-blue-400 bg-transparent z-10"
+                  style={{
+                    left: `${cropRect.x}%`,
+                    top: `${cropRect.y}%`,
+                    width: `${cropRect.w}%`,
+                    height: `${cropRect.h}%`,
+                  }}
+                  onPointerDown={(e) => handleCropPointerDown("move", e)}
+                >
+                  {/* Visible image inside crop area */}
+                  <div className="absolute inset-0 overflow-hidden">
+                    <img
+                      src={editPreview || pages[editingIndex]?.preview}
+                      alt=""
+                      className="max-w-none"
+                      style={{
+                        position: "absolute",
+                        left: `-${(cropRect.x / cropRect.w) * 100}%`,
+                        top: `-${(cropRect.y / cropRect.h) * 100}%`,
+                        width: `${(100 / cropRect.w) * 100}%`,
+                        height: `${(100 / cropRect.h) * 100}%`,
+                      }}
+                    />
                   </div>
                 </div>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {previews.map((src, i) => (
-                    <div key={i} className="relative group">
-                      <img
-                        src={src}
-                        alt={`Stran ${i + 1}`}
-                        className="w-full aspect-[3/4] object-cover rounded-lg border border-border"
-                      />
-                      <button
-                        onClick={() => removeImage(i)}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                      >
-                        x
-                      </button>
-                      <span className="absolute bottom-0.5 left-0.5 text-[10px] bg-black/60 text-white px-1 rounded">
-                        {i + 1}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={addFromFile}
-                  className="hidden"
-                />
-              </div>
+                {/* Corner handles */}
+                {[
+                  { pos: "tl", style: { left: `${cropRect.x}%`, top: `${cropRect.y}%`, transform: "translate(-50%,-50%)" } },
+                  { pos: "tr", style: { left: `${cropRect.x + cropRect.w}%`, top: `${cropRect.y}%`, transform: "translate(-50%,-50%)" } },
+                  { pos: "bl", style: { left: `${cropRect.x}%`, top: `${cropRect.y + cropRect.h}%`, transform: "translate(-50%,-50%)" } },
+                  { pos: "br", style: { left: `${cropRect.x + cropRect.w}%`, top: `${cropRect.y + cropRect.h}%`, transform: "translate(-50%,-50%)" } },
+                ].map((corner) => (
+                  <div
+                    key={corner.pos}
+                    className="absolute w-6 h-6 bg-blue-500 rounded-full border-2 border-white z-20 cursor-pointer touch-none"
+                    style={corner.style}
+                    onPointerDown={(e) => handleCropPointerDown(corner.pos, e)}
+                  />
+                ))}
+              </>
+            )}
+          </div>
 
-              {/* Filter selection */}
-              <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
-                <p className="text-sm font-semibold text-txt mb-3">Filter</p>
-                <div className="flex gap-2">
-                  {(["bw", "grayscale", "color"] as ScanFilter[]).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilter(f)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        filter === f
-                          ? "bg-accent text-white shadow-sm"
-                          : "bg-bg2 text-txt2 hover:text-txt border border-border"
-                      }`}
-                    >
-                      {filterLabels[f]}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-txt3 mt-2">
-                  {filter === "bw" && "Najboljse za besedilne dokumente — visok kontrast"}
-                  {filter === "grayscale" && "Dobro za dokumente s slikami"}
-                  {filter === "color" && "Ohrani originalne barve"}
-                </p>
-              </div>
-
-              {/* Generate button */}
+          {/* Edit toolbar */}
+          <div className="bg-black/80 backdrop-blur-sm px-2 py-3">
+            {/* Tool buttons */}
+            <div className="flex justify-center gap-1 mb-3">
               <button
-                onClick={generatePdf}
-                className="w-full bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                onClick={() => setIsCropping(!isCropping)}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+                  isCropping ? "bg-blue-500/30 text-blue-400" : "text-white/70"
+                }`}
               >
-                Ustvari PDF scan
+                <span className="text-lg">✂️</span>
+                Obrezi
               </button>
-            </>
-          )}
+              <button
+                onClick={() => setEditRotation((r) => (r + 90) % 360)}
+                className="flex flex-col items-center gap-1 px-4 py-2 rounded-lg text-xs font-medium text-white/70"
+              >
+                <span className="text-lg">🔄</span>
+                Zavrti
+              </button>
+              {(["bw", "grayscale", "color"] as ScanFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setEditFilter(f)}
+                  className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    editFilter === f ? "bg-blue-500/30 text-blue-400" : "text-white/70"
+                  }`}
+                >
+                  <span className="text-lg">{f === "bw" ? "◐" : f === "grayscale" ? "🌫" : "🎨"}</span>
+                  {f === "bw" ? "B&W" : f === "grayscale" ? "Sivo" : "Barva"}
+                </button>
+              ))}
+            </div>
+
+            {/* Keep scanning / Save */}
+            <div className="flex gap-3 px-2 scan-safe-bottom">
+              <button
+                onClick={() => { saveEdit().then(() => startCamera()); }}
+                className="flex-1 bg-white/15 text-white font-semibold py-3 rounded-xl text-sm border border-white/20"
+              >
+                Skeniraj naprej
+              </button>
+              <button
+                onClick={saveEdit}
+                className="flex-1 bg-blue-500 text-white font-semibold py-3 rounded-xl text-sm shadow-lg"
+              >
+                Shrani stran
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            .scan-safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+            .scan-safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+          `}</style>
+        </div>
+      )}
+
+      {/* ====== REVIEW / pages list ====== */}
+      {status === "review" && (
+        <div className="space-y-4">
+          <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold text-txt">
+                {pages.length} {pages.length === 1 ? "stran" : "strani"}
+              </p>
+              <button
+                onClick={startCamera}
+                className="text-xs bg-accent/10 text-accent font-semibold px-3 py-1.5 rounded-lg"
+              >
+                + Dodaj stran
+              </button>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {pages.map((page, i) => (
+                <div key={i} className="relative group">
+                  <button onClick={() => editPage(i)} className="w-full">
+                    <img
+                      src={page.preview}
+                      alt={`Stran ${i + 1}`}
+                      className="w-full aspect-[3/4] object-cover rounded-xl border-2 border-border group-hover:border-accent transition-all shadow-sm"
+                    />
+                  </button>
+                  <button
+                    onClick={() => removePage(i)}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-red text-white text-xs rounded-full shadow-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ✕
+                  </button>
+                  <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded-md font-medium">
+                    {i + 1}
+                  </span>
+                  <button
+                    onClick={() => editPage(i)}
+                    className="absolute bottom-1 right-1 text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded-md font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    Uredi
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={generatePdf}
+            className="w-full bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+          >
+            Shrani PDF ({pages.length} {pages.length === 1 ? "stran" : "strani"})
+          </button>
+        </div>
+      )}
+
+      {/* ====== IDLE — start screen ====== */}
+      {status === "idle" && (
+        <div className="space-y-3">
+          <button
+            onClick={startCamera}
+            className="w-full border-2 border-dashed border-border rounded-2xl p-10 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
+          >
+            <p className="text-4xl mb-3">📷</p>
+            <p className="text-sm font-medium text-txt mb-1">Odpri kamero in skeniraj dokument</p>
+            <p className="text-xs text-txt3">Na telefonu se odpre zadnja kamera</p>
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-txt3 font-medium">ali</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full border-2 border-dashed border-border rounded-2xl p-8 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
+          >
+            <p className="text-3xl mb-2">📁</p>
+            <p className="text-sm font-medium text-txt mb-1">Nalozi slike iz naprave</p>
+            <p className="text-xs text-txt3">JPG, PNG — lahko vec slik hkrati</p>
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={addFromFile} className="hidden" />
         </div>
       )}
 
@@ -1303,8 +1650,8 @@ function ScanUI({ tool }: { tool: Tool }) {
       {status === "processing" && (
         <div className="bg-surface rounded-2xl border border-border p-10 text-center shadow-sm">
           <div className="text-4xl mb-4 animate-spin">⏳</div>
-          <p className="text-sm font-medium text-txt mb-1">Ustvarjam PDF scan...</p>
-          <p className="text-xs text-txt3">Obdelujem {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}</p>
+          <p className="text-sm font-medium text-txt mb-1">Ustvarjam PDF...</p>
+          <p className="text-xs text-txt3">Obdelujem {pages.length} {pages.length === 1 ? "stran" : "strani"}</p>
         </div>
       )}
 
@@ -1315,7 +1662,7 @@ function ScanUI({ tool }: { tool: Tool }) {
             <div className="text-4xl mb-2">✅</div>
             <p className="text-lg font-bold text-txt">Scan ustvarjen!</p>
             <p className="text-sm text-txt2 mt-1">
-              {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"} — {fmtSize(result.size)}
+              {pages.length} {pages.length === 1 ? "stran" : "strani"} — {fmtSize(result.size)}
             </p>
           </div>
           <div className="flex gap-3">
