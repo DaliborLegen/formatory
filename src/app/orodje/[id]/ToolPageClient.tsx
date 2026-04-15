@@ -1328,6 +1328,23 @@ function ScanUI({ tool }: { tool: Tool }) {
     URL.revokeObjectURL(url);
   };
 
+  const shareResult = async () => {
+    if (!result) return;
+    const file = new File([result], "scan.pdf", { type: "application/pdf" });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({
+          title: "Scan with formatory.si",
+          text: "Scan with formatory.si by aiprosolutions.si",
+          files: [file],
+        });
+      } catch { /* user cancelled */ }
+    } else {
+      // Fallback: download
+      downloadResult();
+    }
+  };
+
   const resetAll = () => {
     stopCamera();
     pages.forEach((p) => URL.revokeObjectURL(p.preview));
@@ -1719,18 +1736,27 @@ function ScanUI({ tool }: { tool: Tool }) {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={downloadResult}
+              onClick={shareResult}
               className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3 rounded-xl text-sm transition-all duration-200 shadow-sm"
+            >
+              Deli / Poslji
+            </button>
+            <button
+              onClick={downloadResult}
+              className="flex-1 bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
             >
               Prenesi PDF
             </button>
-            <button
-              onClick={resetAll}
-              className="flex-1 bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
-            >
-              Nov scan
-            </button>
           </div>
+          <button
+            onClick={resetAll}
+            className="w-full mt-3 bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
+          >
+            Nov scan
+          </button>
+          <p className="text-center text-[10px] text-txt3 mt-3">
+            Scan with formatory.si by aiprosolutions.si
+          </p>
         </div>
       )}
 
