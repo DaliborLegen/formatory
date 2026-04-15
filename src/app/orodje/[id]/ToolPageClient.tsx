@@ -1147,11 +1147,31 @@ function ScanUI({ tool }: { tool: Tool }) {
     setTimeout(() => setFlashActive(false), 200);
 
     const video = videoRef.current;
+    // Calculate visible area (object-cover crops the video)
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const rect = video.getBoundingClientRect();
+    const displayW = rect.width;
+    const displayH = rect.height;
+    const videoRatio = vw / vh;
+    const displayRatio = displayW / displayH;
+
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (videoRatio > displayRatio) {
+      // Video is wider — sides are cropped
+      sw = vh * displayRatio;
+      sx = (vw - sw) / 2;
+    } else {
+      // Video is taller — top/bottom are cropped
+      sh = vw / displayRatio;
+      sy = (vh - sh) / 2;
+    }
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = sw;
+    canvas.height = sh;
     const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
@@ -1449,7 +1469,7 @@ function ScanUI({ tool }: { tool: Tool }) {
 
       {/* ====== CAMERA — fullscreen ====== */}
       {status === "camera" && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black flex flex-col">
           <div className="flex-1 relative overflow-hidden">
             <video
               ref={videoRef}
@@ -1508,7 +1528,7 @@ function ScanUI({ tool }: { tool: Tool }) {
 
       {/* ====== EDIT PAGE — fullscreen ====== */}
       {status === "edit" && editingIndex >= 0 && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black flex flex-col">
           {/* Top bar */}
           <div className="bg-black/80 backdrop-blur-sm px-4 py-3 flex items-center justify-between scan-safe-top">
             <button onClick={retakePhoto} className="text-red-400 text-sm font-semibold px-3 py-1.5 bg-white/10 rounded-lg">
