@@ -934,6 +934,7 @@ function ScanUI({ tool }: { tool: Tool }) {
   const [status, setStatus] = useState<"idle" | "camera" | "processing" | "done" | "error">("idle");
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState("");
+  const [flashActive, setFlashActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -969,8 +970,31 @@ function ScanUI({ tool }: { tool: Tool }) {
     }
   };
 
+  const playShutterSound = () => {
+    try {
+      const audioCtx = new AudioContext();
+      // Short click sound
+      const duration = 0.15;
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / audioCtx.sampleRate;
+        data[i] = Math.sin(t * 4000) * Math.exp(-t * 40) * 0.3;
+      }
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
+    } catch { /* ignore audio errors */ }
+  };
+
   const capturePhoto = () => {
     if (!videoRef.current) return;
+    // Flash effect
+    setFlashActive(true);
+    playShutterSound();
+    setTimeout(() => setFlashActive(false), 200);
+
     const video = videoRef.current;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
@@ -1077,37 +1101,74 @@ function ScanUI({ tool }: { tool: Tool }) {
         </div>
       </div>
 
-      {/* Camera view */}
+      {/* Camera view — fullscreen */}
       {status === "camera" && (
-        <div className="space-y-4">
-          <div className="relative bg-black rounded-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          {/* Video feed */}
+          <div className="flex-1 relative overflow-hidden">
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="w-full rounded-2xl"
+              className="absolute inset-0 w-full h-full object-cover"
             />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={capturePhoto}
-              className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm flex items-center justify-center gap-2"
-            >
-              Slikaj
-            </button>
+            {/* Flash overlay */}
+            {flashActive && (
+              <div className="absolute inset-0 bg-white z-10 animate-[flashFade_0.3s_ease-out_forwards]" />
+            )}
+            {/* Page counter badge */}
+            {scannedImages.length > 0 && (
+              <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-full">
+                {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}
+              </div>
+            )}
+            {/* Close button */}
             <button
               onClick={doneCapturing}
-              className="px-6 bg-bg2 border border-border text-txt font-medium py-3.5 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
+              className="absolute top-4 right-4 w-10 h-10 bg-black/60 backdrop-blur-sm text-white rounded-full flex items-center justify-center text-xl hover:bg-black/80 transition-all"
             >
-              Koncano
+              ✕
             </button>
           </div>
-          {scannedImages.length > 0 && (
-            <p className="text-xs text-accent2 font-medium text-center">
-              {scannedImages.length} {scannedImages.length === 1 ? "stran posneta" : "strani posnetih"}
-            </p>
-          )}
+          {/* Bottom controls */}
+          <div className="bg-black/80 backdrop-blur-sm px-6 py-6 flex items-center justify-center gap-6 safe-area-bottom">
+            {/* Done button */}
+            <button
+              onClick={doneCapturing}
+              className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm text-white flex items-center justify-center text-sm font-semibold border border-white/30"
+            >
+              OK
+            </button>
+            {/* Shutter button */}
+            <button
+              onClick={capturePhoto}
+              className="w-20 h-20 rounded-full bg-white border-4 border-white/40 flex items-center justify-center shadow-lg active:scale-90 transition-transform duration-100"
+            >
+              <div className="w-16 h-16 rounded-full bg-white border-2 border-gray-300" />
+            </button>
+            {/* Thumbnail of last scan */}
+            <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/40 bg-black/40">
+              {previews.length > 0 ? (
+                <img
+                  src={previews[previews.length - 1]}
+                  alt="Zadnja"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs">0</div>
+              )}
+            </div>
+          </div>
+          <style jsx>{`
+            @keyframes flashFade {
+              0% { opacity: 0.8; }
+              100% { opacity: 0; }
+            }
+            .safe-area-bottom {
+              padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+            }
+          `}</style>
         </div>
       )}
 
