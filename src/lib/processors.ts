@@ -673,6 +673,84 @@ export async function resizeImage(
   });
 }
 
+// ===== SCAN =====
+
+export async function scanToPdf(
+  images: Blob[],
+  filter: "color" | "grayscale" | "bw"
+): Promise<Blob> {
+  const pdf = await PDFDocument.create();
+
+  for (const imageBlob of images) {
+    const processed = await applyScanFilter(imageBlob, filter);
+    const data = await processed.arrayBuffer();
+    let img;
+    if (processed.type === "image/png") {
+      img = await pdf.embedPng(data);
+    } else {
+      img = await pdf.embedJpg(data);
+    }
+    // A4 proportions: fit image to page
+    const A4_WIDTH = 595;
+    const A4_HEIGHT = 842;
+    const scale = Math.min(A4_WIDTH / img.width, A4_HEIGHT / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const page = pdf.addPage([A4_WIDTH, A4_HEIGHT]);
+    page.drawImage(img, {
+      x: (A4_WIDTH - w) / 2,
+      y: (A4_HEIGHT - h) / 2,
+      width: w,
+      height: h,
+    });
+  }
+
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+}
+
+function applyScanFilter(
+  imageBlob: Blob,
+  filter: "color" | "grayscale" | "bw"
+): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+
+      if (filter !== "color") {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (filter === "bw") {
+            // High contrast black & white scan effect
+            const boosted = Math.min(255, gray * 1.3 - 30);
+            const val = boosted > 140 ? 255 : 0;
+            d[i] = d[i + 1] = d[i + 2] = val;
+          } else {
+            // Grayscale with slight contrast boost
+            const boosted = Math.min(255, Math.max(0, (gray - 128) * 1.2 + 128));
+            d[i] = d[i + 1] = d[i + 2] = boosted;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      canvas.toBlob(
+        (blob) => resolve(blob!),
+        "image/jpeg",
+        0.92
+      );
+    };
+    img.src = URL.createObjectURL(imageBlob);
+  });
+}
+
 // ===== VIDEO (ffmpeg.wasm) =====
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

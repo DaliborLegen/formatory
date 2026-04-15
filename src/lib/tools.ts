@@ -62,6 +62,12 @@ export const TOOLS: ToolSection[] = [
     ],
   },
   {
+    section: "Skeniraj",
+    items: [
+      { id: "doc_scan", icon: "📸", color: "bg-teal", title: "Skeniraj dokument", sub: "Slikaj s kamero → PDF scan" },
+    ],
+  },
+  {
     section: "Video & zvok",
     items: [
       { id: "vid_convert", icon: "🎬", color: "bg-mint", title: "Pretvori video", sub: "MP4, AVI, MKV, MOV, WebM, GIF", accept: "video/*" },

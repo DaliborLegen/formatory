@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { Tool } from "@/lib/tools";
 import Link from "next/link";
 
@@ -265,6 +265,11 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
         </p>
       </div>
     );
+  }
+
+  // Document scanner - special UI
+  if (tool.id === "doc_scan") {
+    return <ScanUI tool={tool} />;
   }
 
   const onDrop = useCallback(
@@ -913,6 +918,375 @@ export default function ToolPageClient({ tool }: { tool: Tool }) {
       {/* Privacy note */}
       <p className="text-center text-xs text-txt3 mt-8">
         Vse poteka v vašem brskalniku. Datoteke se ne nalagajo na strežnik.
+      </p>
+    </div>
+  );
+}
+
+// ===== SCAN UI COMPONENT =====
+
+type ScanFilter = "color" | "grayscale" | "bw";
+
+function ScanUI({ tool }: { tool: Tool }) {
+  const [scannedImages, setScannedImages] = useState<Blob[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [filter, setFilter] = useState<ScanFilter>("bw");
+  const [status, setStatus] = useState<"idle" | "camera" | "processing" | "done" | "error">("idle");
+  const [result, setResult] = useState<Blob | null>(null);
+  const [error, setError] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => stopCamera();
+  }, [stopCamera]);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setStatus("camera");
+    } catch {
+      setError("Ni mogoce dostopati do kamere. Preverite dovoljenja brskalnika.");
+      setStatus("error");
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        setScannedImages((prev) => [...prev, blob]);
+        setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
+      },
+      "image/jpeg",
+      0.95
+    );
+  };
+
+  const addFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const newFiles = Array.from(e.target.files);
+    for (const f of newFiles) {
+      const url = URL.createObjectURL(f);
+      setPreviews((prev) => [...prev, url]);
+      setScannedImages((prev) => [...prev, f]);
+    }
+    e.target.value = "";
+  };
+
+  const removeImage = (index: number) => {
+    URL.revokeObjectURL(previews[index]);
+    setScannedImages((prev) => prev.filter((_, i) => i !== index));
+    setPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const doneCapturing = () => {
+    stopCamera();
+    setStatus("idle");
+  };
+
+  const generatePdf = async () => {
+    if (scannedImages.length === 0) return;
+    setStatus("processing");
+    setError("");
+    try {
+      const proc = await import("@/lib/processors");
+      const blob = await proc.scanToPdf(scannedImages, filter);
+      setResult(blob);
+      setStatus("done");
+      fetch("/api/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_id: tool.id }),
+      }).catch(() => {});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Napaka pri ustvarjanju PDF");
+      setStatus("error");
+    }
+  };
+
+  const downloadResult = () => {
+    if (!result) return;
+    const url = URL.createObjectURL(result);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "scan.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetAll = () => {
+    stopCamera();
+    previews.forEach((u) => URL.revokeObjectURL(u));
+    setScannedImages([]);
+    setPreviews([]);
+    setResult(null);
+    setStatus("idle");
+    setError("");
+  };
+
+  const fmtSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  };
+
+  const filterLabels: Record<ScanFilter, string> = {
+    color: "Barvno",
+    grayscale: "Sivine",
+    bw: "Crno-belo",
+  };
+
+  return (
+    <div>
+      <Link href="/" className="text-accent text-sm mb-6 inline-flex items-center gap-1.5 hover:underline font-medium">
+        ← Nazaj
+      </Link>
+      <div className="flex items-center gap-4 mb-8">
+        <span className={`w-12 h-12 ${tool.color} rounded-xl flex items-center justify-center text-white text-2xl shadow-sm`}>
+          {tool.icon}
+        </span>
+        <div>
+          <h1 className="text-2xl font-bold text-txt tracking-tight">{tool.title}</h1>
+          <p className="text-sm text-txt2 mt-0.5">{tool.sub}</p>
+        </div>
+      </div>
+
+      {/* Camera view */}
+      {status === "camera" && (
+        <div className="space-y-4">
+          <div className="relative bg-black rounded-2xl overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full rounded-2xl"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={capturePhoto}
+              className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm flex items-center justify-center gap-2"
+            >
+              Slikaj
+            </button>
+            <button
+              onClick={doneCapturing}
+              className="px-6 bg-bg2 border border-border text-txt font-medium py-3.5 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
+            >
+              Koncano
+            </button>
+          </div>
+          {scannedImages.length > 0 && (
+            <p className="text-xs text-accent2 font-medium text-center">
+              {scannedImages.length} {scannedImages.length === 1 ? "stran posneta" : "strani posnetih"}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Idle / setup */}
+      {(status === "idle") && (
+        <div className="space-y-4">
+          {/* Capture buttons */}
+          {scannedImages.length === 0 ? (
+            <div className="space-y-3">
+              <button
+                onClick={startCamera}
+                className="w-full border-2 border-dashed border-border rounded-2xl p-10 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
+              >
+                <p className="text-4xl mb-3">📷</p>
+                <p className="text-sm font-medium text-txt mb-1">Odpri kamero in slikaj dokument</p>
+                <p className="text-xs text-txt3">Na telefonu se odpre zadnja kamera</p>
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-txt3 font-medium">ali</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full border-2 border-dashed border-border rounded-2xl p-8 text-center cursor-pointer hover:border-accent/50 hover:bg-surface/80 transition-all duration-200"
+              >
+                <p className="text-3xl mb-2">📁</p>
+                <p className="text-sm font-medium text-txt mb-1">Nalozi slike iz naprave</p>
+                <p className="text-xs text-txt3">JPG, PNG — lahko vec slik hkrati</p>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                capture="environment"
+                onChange={addFromFile}
+                className="hidden"
+              />
+            </div>
+          ) : (
+            <>
+              {/* Thumbnails of scanned pages */}
+              <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-txt">
+                    {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={startCamera}
+                      className="text-xs text-accent font-medium hover:underline"
+                    >
+                      + Slikaj se
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs text-accent font-medium hover:underline"
+                    >
+                      + Nalozi
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                  {previews.map((src, i) => (
+                    <div key={i} className="relative group">
+                      <img
+                        src={src}
+                        alt={`Stran ${i + 1}`}
+                        className="w-full aspect-[3/4] object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        onClick={() => removeImage(i)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        x
+                      </button>
+                      <span className="absolute bottom-0.5 left-0.5 text-[10px] bg-black/60 text-white px-1 rounded">
+                        {i + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={addFromFile}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Filter selection */}
+              <div className="bg-surface rounded-xl border border-border p-5 shadow-sm">
+                <p className="text-sm font-semibold text-txt mb-3">Filter</p>
+                <div className="flex gap-2">
+                  {(["bw", "grayscale", "color"] as ScanFilter[]).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFilter(f)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        filter === f
+                          ? "bg-accent text-white shadow-sm"
+                          : "bg-bg2 text-txt2 hover:text-txt border border-border"
+                      }`}
+                    >
+                      {filterLabels[f]}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-txt3 mt-2">
+                  {filter === "bw" && "Najboljse za besedilne dokumente — visok kontrast"}
+                  {filter === "grayscale" && "Dobro za dokumente s slikami"}
+                  {filter === "color" && "Ohrani originalne barve"}
+                </p>
+              </div>
+
+              {/* Generate button */}
+              <button
+                onClick={generatePdf}
+                className="w-full bg-accent hover:bg-accent-hover text-white font-semibold py-3.5 rounded-xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+              >
+                Ustvari PDF scan
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Processing */}
+      {status === "processing" && (
+        <div className="bg-surface rounded-2xl border border-border p-10 text-center shadow-sm">
+          <div className="text-4xl mb-4 animate-spin">⏳</div>
+          <p className="text-sm font-medium text-txt mb-1">Ustvarjam PDF scan...</p>
+          <p className="text-xs text-txt3">Obdelujem {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"}</p>
+        </div>
+      )}
+
+      {/* Done */}
+      {status === "done" && result && (
+        <div className="bg-surface rounded-2xl border border-border p-8 shadow-sm">
+          <div className="text-center mb-6">
+            <div className="text-4xl mb-2">✅</div>
+            <p className="text-lg font-bold text-txt">Scan ustvarjen!</p>
+            <p className="text-sm text-txt2 mt-1">
+              {scannedImages.length} {scannedImages.length === 1 ? "stran" : "strani"} — {fmtSize(result.size)}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={downloadResult}
+              className="flex-1 bg-accent hover:bg-accent-hover text-white font-semibold py-3 rounded-xl text-sm transition-all duration-200 shadow-sm"
+            >
+              Prenesi PDF
+            </button>
+            <button
+              onClick={resetAll}
+              className="flex-1 bg-bg2 border border-border text-txt font-medium py-3 rounded-xl text-sm hover:bg-surface-hover transition-all duration-200"
+            >
+              Nov scan
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {status === "error" && (
+        <div className="bg-surface rounded-2xl border border-red/30 p-8 text-center shadow-sm">
+          <div className="text-4xl mb-3">❌</div>
+          <p className="text-base font-semibold text-red mb-2">Napaka</p>
+          <p className="text-sm text-txt2 mb-6">{error}</p>
+          <button
+            onClick={resetAll}
+            className="bg-accent hover:bg-accent-hover text-white font-semibold py-3 px-8 rounded-xl text-sm transition-all duration-200 shadow-sm"
+          >
+            Poskusi znova
+          </button>
+        </div>
+      )}
+
+      <p className="text-center text-xs text-txt3 mt-8">
+        Vse poteka v vasem brskalniku. Slike se ne nalagajo na streznik.
       </p>
     </div>
   );
